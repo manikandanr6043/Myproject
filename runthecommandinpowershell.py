@@ -55,26 +55,46 @@ def lambda_handler(event, context):
                 for tag in Tags['Instances']:
                     for taged in tag['Tags']:
                         if taged['Key'] == 'Name':
-                            response1 = (tag['InstanceId'],tag['PrivateIpAddress'],tag['State']['Name'],taged['Value'],region,tag['Platform'])
-                            payload = json.dumps(response1);
-                            resText1 = {"text":  payload}
-                            return resText1
+                            if tag['State']['Name'] == "running":
+                                print(tag)
+                                response1=(tag['InstanceId'], tag['PublicIpAddress'], tag['State']['Name'], taged['Value'], region,tag['Platform'],tag['PrivateIpAddress'])
+                                payload = json.dumps(response1);
+                                resText1 = {"text":  payload}
+                                return resText1
+                            else:
+                                response1=(tag['InstanceId'], tag['PrivateIpAddress'], tag['State']['Name'], taged['Value'], region)
+                                payload = json.dumps(response1);
+                                resText1 = {"text":  payload}
+                                return resText1
             for Tags in my_instance1['Reservations']:
                 for tag in Tags['Instances']:
                     for taged in tag['Tags']:
                         if taged['Key'] == 'Name':
-                            response1 = (tag['InstanceId'],tag['PrivateIpAddress'],tag['State']['Name'],taged['Value'],region,tag['Platform'])
-                            payload = json.dumps(response1);
-                            resText1 = {"text":  payload}
-                            return resText1
+                            if tag['State']['Name'] == "running":
+                                response1=(tag['InstanceId'], tag['PublicIpAddress'], tag['State']['Name'], taged['Value'], region,tag['Platform'],tag['PrivateIpAddress'])
+                                payload = json.dumps(response1);
+                                resText1 = {"text":  payload}
+                                return resText1
+                            else:
+                                response1=(tag['InstanceId'], tag['PrivateIpAddress'], tag['State']['Name'], taged['Value'], region)
+                                payload = json.dumps(response1);
+                                resText1 = {"text":  payload}
+                                return resText1
             for Tags in my_instance2['Reservations']:
                 for tag in Tags['Instances']:
                     for taged in tag['Tags']:
                         if taged['Key'] == 'Name':
-                            response1 = (tag['PrivateIpAddress'],tag['State']['Name'],taged['Value'],region,tag['Platform'])
-                            payload = json.dumps(response1);
-                            resText1 = {"text":  payload}
-                            return resText1
+                            if tag['State']['Name'] == "running":
+                                print(tag)
+                                response1=(tag['InstanceId'], tag['PublicIpAddress'], tag['State']['Name'], taged['Value'], region,tag['Platform'],tag['PrivateIpAddress'])
+                                payload = json.dumps(response1);
+                                resText1 = {"text":  payload}
+                                return resText1
+                            else:
+                                response1=(tag['InstanceId'], tag['PrivateIpAddress'], tag['State']['Name'], taged['Value'], region)
+                                payload = json.dumps(response1);
+                                resText1 = {"text":  payload}
+                                return resText1
     else:
         global user_instance;
         global user_command;
