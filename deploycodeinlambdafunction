@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lambda function with cfn-response.
+Resources:
+  primer:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: Hackthon
+      Runtime: python3.9
+      Role: arn:aws:iam::278501730142:role/service-role/Instance_stop_ec2
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import boto3
+          client = boto3.client('ssm')
+          Windowname="hackthon"
+          ###########Creating maintainance window######
+          def lambda_handler(event, context):
+            maintainance_window_creation = client.create_maintenance_window(Name=Windowname,Description='Hackathon_Patchupdate',StartDate='2021-09-28T01:30:00Z',EndDate='2021-09-28T08:30:00Z',Schedule='cron(30 23 ? * TUE#3 *)',
+            ScheduleTimezone='UTC',
+            Duration=3,
+            Cutoff=1,
+            AllowUnassociatedTargets=True,
+            Tags=[{'Key': 'Name','Value': 'Mani_Permanent_Instance'},])
+            print("maintainance_window_creation")
+            response1 = client.describe_maintenance_windows(Filters=[{'Key': 'Name','Values': [Windowname]}])
+            for i in response1['WindowIdentities']:
+                window_id=i['WindowId']
+            response2 = client.register_target_with_maintenance_window(WindowId=window_id,ResourceType='INSTANCE',Targets=[{'Key': 'tag:Name','Values': ['Mani_Permanent_Instance',]},],Name='Hackthontargettesting',Description='Hackthontargettesting',)
+            print("Maintainance_window_id:"+window_id)
+            print(response2)
+      Description: SSM Creation
+      TracingConfig:
+        Mode: Active
