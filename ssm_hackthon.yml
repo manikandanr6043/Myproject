@@ -1,0 +1,37 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Maintainance window creation
+Parameters:
+  Test:
+    Type: String
+  Startdates:
+    Type: String
+  EndDates:
+    Type: String
+  Schedules:
+    Type: String
+Resources:
+  Creation:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      AllowUnassociatedTargets: true
+      Cutoff: 1
+      Description: hackthon_maintainace_windows
+      Duration: 3
+      EndDate: !Ref EndDates
+      Name: !Ref Test
+      Schedule: !Ref Schedules
+      ScheduleOffset: 1
+      ScheduleTimezone: UTC
+      StartDate: !Ref Startdates
+  Targets:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    Properties: 
+      Description: Tesinger
+      Name: Targets_Hack
+      OwnerInformation: env
+      ResourceType: INSTANCE 
+      Targets: 
+          -  Key: tag:Name
+             Values: 
+             - Mani_Permanent_Instance
+      WindowId: !Ref Creation
