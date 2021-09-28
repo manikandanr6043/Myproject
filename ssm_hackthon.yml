@@ -35,3 +35,17 @@ Resources:
              Values: 
              - Mani_Permanent_Instance
       WindowId: !Ref Creation
+  PatchTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    Properties:
+      Description: Apply OS patches on instances in target
+      MaxConcurrency: 1
+      MaxErrors: 1
+      Priority: 0
+      TaskType: RUN_COMMAND
+      WindowId: !Ref Creation
+      TaskArn: AWS-RunPatchBaseline
+      Targets:
+      - Key: WindowTargetIds
+        Values:
+        - !Ref Targets
