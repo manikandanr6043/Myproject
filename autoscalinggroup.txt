@@ -1,0 +1,187 @@
+import boto3
+import base64
+
+client = boto3.client('autoscaling')
+clientec2 = boto3.client('ec2')
+import datetime
+e = datetime.datetime.now()
+time = e.strftime("%d_%m_%Y")+e.strftime("%I_%M_%S")
+autogroup = str(input("autoscaling group name:"))
+####Launch name###################
+lanuchname = autogroup+time
+print(lanuchname)
+#################Describe existing autoscaling group#######################################
+response = client.describe_auto_scaling_groups(
+    AutoScalingGroupNames=[
+        autogroup,
+    ],
+)
+print(response)
+for test in response["AutoScalingGroups"]:
+    for instance_id in test["Instances"]:
+        print(instance_id["InstanceId"])
+        instance_id= instance_id["InstanceId"]
+print(test["LaunchConfigurationName"])
+launch=test["LaunchConfigurationName"]
+#######################Describe instance##########################################
+response1 = clientec2.describe_instances(InstanceIds=[instance_id])
+for ami in response1["Reservations"]:
+    for imageid in ami["Instances"]:
+        print(imageid["ImageId"])
+        amiid = imageid["ImageId"]
+######################Describe the existing LC#######################################
+describelaunch = client.describe_launch_configurations(LaunchConfigurationNames=[launch])
+print(describelaunch)
+for lanuchparamater in describelaunch:
+    print(lanuchparamater)
+for lauchconfiguration in describelaunch["LaunchConfigurations"]:
+     print(lauchconfiguration)
+     imageid = lauchconfiguration["ImageId"]
+     print(imageid)
+     keyname = lauchconfiguration["KeyName"]
+     print(keyname)
+     securityGroups = lauchconfiguration["SecurityGroups"]
+     print(securityGroups)
+     userdatas = lauchconfiguration["UserData"]
+     #base64_message = 'Iy9iaW4vYmFzaA=='
+     base64_bytes = userdatas.encode('ascii')
+     message_bytes = base64.b64decode(base64_bytes)
+     userdata = message_bytes.decode('ascii')
+     instancetype = lauchconfiguration["InstanceType"]
+     print(instancetype)
+     InstanceMonitor=lauchconfiguration["InstanceMonitoring"]
+     try:
+         Iam=lauchconfiguration["IamInstanceProfile"]
+         print(Iam)
+     except KeyError:
+         print("Iam")
+     if (lauchconfiguration["EbsOptimized"]) == True:
+         print((lauchconfiguration["EbsOptimized"]))
+         EBSopt=lauchconfiguration["EbsOptimized"]
+     elif (lauchconfiguration["EbsOptimized"]) == False:
+         print((lauchconfiguration["EbsOptimized"]))
+         EBSopt = lauchconfiguration["EbsOptimized"]
+     BlockDeviceMappings = lauchconfiguration["BlockDeviceMappings"]
+     print(BlockDeviceMappings)
+     count1 = len(BlockDeviceMappings)
+     count = count1 - 1
+     print(count)
+     if count==0:
+        mani = BlockDeviceMappings[0]
+        mani["Ebs"]["VolumeType"] = "gp3"
+        mani["Ebs"]["Iops"] = 3000
+     elif count==1:
+        mani = BlockDeviceMappings[0]
+        mani["Ebs"]["VolumeType"] = "gp3"
+        mani["Ebs"]["Iops"] = 3000
+        mani1 = BlockDeviceMappings[1]
+        mani1["Ebs"]["VolumeType"] = "gp3"
+        mani1["Ebs"]["Iops"] = 3000
+     elif count==2:
+        mani = BlockDeviceMappings[0]
+        mani["Ebs"]["VolumeType"] = "gp3"
+        mani["Ebs"]["Iops"] = 3000
+        mani1 = BlockDeviceMappings[1]
+        mani1["Ebs"]["VolumeType"] = "gp3"
+        mani1["Ebs"]["Iops"] = 3000
+        mani2 = BlockDeviceMappings[1]
+        mani2["Ebs"]["VolumeType"] = "gp3"
+        mani2["Ebs"]["Iops"] = 3000
+     elif count==3:
+        mani = BlockDeviceMappings[0]
+        mani["Ebs"]["VolumeType"] = "gp3"
+        mani["Ebs"]["Iops"] = 3000
+        mani1 = BlockDeviceMappings[1]
+        mani1["Ebs"]["VolumeType"] = "gp3"
+        mani1["Ebs"]["Iops"] = 3000
+        mani2 = BlockDeviceMappings[2]
+        mani2["Ebs"]["VolumeType"] = "gp3"
+        mani2["Ebs"]["Iops"] = 3000
+        mani3 = BlockDeviceMappings[3]
+        mani3["Ebs"]["VolumeType"] = "gp3"
+        mani3["Ebs"]["Iops"] = 3000
+     elif count==4:
+        mani = BlockDeviceMappings[0]
+        mani["Ebs"]["VolumeType"] = "gp3"
+        mani["Ebs"]["Iops"] = 3000
+        mani1 = BlockDeviceMappings[1]
+        mani1["Ebs"]["VolumeType"] = "gp3"
+        mani1["Ebs"]["Iops"] = 3000
+        mani2 = BlockDeviceMappings[2]
+        mani2["Ebs"]["VolumeType"] = "gp3"
+        mani2["Ebs"]["Iops"] = 3000
+        mani3 = BlockDeviceMappings[3]
+        mani3["Ebs"]["VolumeType"] = "gp3"
+        mani3["Ebs"]["Iops"] = 3000
+        mani4 = BlockDeviceMappings[4]
+        mani4["Ebs"]["VolumeType"] = "gp3"
+        mani4["Ebs"]["Iops"] = 3000
+     elif count ==5:
+        mani = BlockDeviceMappings[0]
+        mani["Ebs"]["VolumeType"] = "gp3"
+        mani["Ebs"]["Iops"] = 3000
+        mani1 = BlockDeviceMappings[1]
+        mani1["Ebs"]["VolumeType"] = "gp3"
+        mani1["Ebs"]["Iops"] = 3000
+        mani2 = BlockDeviceMappings[2]
+        mani2["Ebs"]["VolumeType"] = "gp3"
+        mani2["Ebs"]["Iops"] = 3000
+        mani3 = BlockDeviceMappings[3]
+        mani3["Ebs"]["VolumeType"] = "gp3"
+        mani3["Ebs"]["Iops"] = 3000
+        mani4 = BlockDeviceMappings[4]
+        mani4["Ebs"]["VolumeType"] = "gp3"
+        mani4["Ebs"]["Iops"] = 3000
+        mani5 = BlockDeviceMappings[5]
+        mani5["Ebs"]["VolumeType"] = "gp3"
+        mani5["Ebs"]["Iops"] = 3000
+#########################Creating new LC##################################################3
+     try:
+        Iam = lauchconfiguration["IamInstanceProfile"]
+        print(Iam)
+        response4 = client.create_launch_configuration(
+            LaunchConfigurationName=lanuchname,
+            ImageId=amiid,
+            KeyName=keyname,
+            SecurityGroups=securityGroups,
+            InstanceType=instancetype,
+            UserData=userdata,
+            # KernelId=KernelId1,
+            BlockDeviceMappings=BlockDeviceMappings,
+            IamInstanceProfile=Iam,
+            InstanceMonitoring=InstanceMonitor,
+            EbsOptimized=EBSopt,
+            AssociatePublicIpAddress=True
+        )
+     except KeyError:
+        response4 = client.create_launch_configuration(
+            LaunchConfigurationName=lanuchname,
+            ImageId=amiid,
+            KeyName=keyname,
+            SecurityGroups=securityGroups,
+            InstanceType=instancetype,
+            UserData=userdata,
+        #KernelId=KernelId1,
+            BlockDeviceMappings=BlockDeviceMappings,
+            InstanceMonitoring=InstanceMonitor,
+            EbsOptimized=EBSopt,
+            AssociatePublicIpAddress=True
+            )
+updateautoscalinggroup = client.update_auto_scaling_group(
+        AutoScalingGroupName=autogroup,
+        LaunchConfigurationName=lanuchname)
+print(updateautoscalinggroup)
+responsefine = client.describe_auto_scaling_groups(
+    AutoScalingGroupNames=[
+        autogroup,
+    ],
+)
+#print(responsefine)
+for test in responsefine["AutoScalingGroups"]:
+    for instance_id in test["Instances"]:
+        print(instance_id["InstanceId"])
+        instance_id= instance_id["InstanceId"]
+print(test["LaunchConfigurationName"])
+launch=test["LaunchConfigurationName"]
+describelaunch1 = client.describe_launch_configurations(LaunchConfigurationNames=[launch])
+print(describelaunch1)
