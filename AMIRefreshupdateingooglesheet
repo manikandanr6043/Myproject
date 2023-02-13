@@ -1,0 +1,107 @@
+import boto3
+import base64
+import datetime
+import pygsheets
+import pandas as pd
+import datetime
+import gspread
+import oauth2client
+now = datetime.datetime.now()
+date= now.date()
+minute= now.time()
+minutestr=str(minute)
+print(date)
+#print(now.minute)
+datestr=str(date)
+#authorization
+gc = pygsheets.authorize(service_file='C:/Users/mravich1/Downloads/manikandan2019-839575bc87f9.json')
+# Create empty dataframe
+sh = gc.open('AMI Refresh Sheet')
+#sheet_count = len(sh.worksheet())
+#print(sheet_count)
+df = pd.DataFrame()
+df1 = pd.DataFrame()
+bfrefreshlc=[]
+afrefreshlc=[]
+new_sheet = sh.add_worksheet(title="BFAMIRefresh"+datestr+minutestr, rows=100, cols=20)
+worksheets = sh.worksheets()
+new_sheet_index = worksheets.index(new_sheet)
+print(len(worksheets))
+print(new_sheet_index)
+#open the google spreadsheet (where 'PY to Gsheet Test' is the name of my sheet)
+file1 = open("testing1.txt","r")
+f1 = file1.readlines()
+region = "us-west-2"
+list_without_newlines = [item.replace("\n", "") for item in f1]
+ssm = boto3.client('ssm',region_name = region)
+response = ssm.get_parameters(
+    Names=['/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id'],
+    WithDecryption=False
+)
+parameters = response['Parameters']
+for parameter in parameters:
+    ami = parameter['Value']
+for email in list_without_newlines:
+    Autoscaling_group=email
+    print(Autoscaling_group)
+    def decode_base64(encoded_string):
+      return base64.b64decode(encoded_string).decode('utf-8')
+    client1 = boto3.client('ec2', region_name=region)
+    response1 = client1.describe_images(ImageIds=["ami-0d6963f2a3f0c66e1"])['Images'][0]
+    Blockmapping = response1["BlockDeviceMappings"]
+    client = boto3.client('autoscaling', region_name=region)
+    response = client.describe_auto_scaling_groups(
+      AutoScalingGroupNames=[
+        Autoscaling_group
+      ])['AutoScalingGroups'][0]
+    lc_name = response["LaunchConfigurationName"]
+    bfrefreshlc.append(lc_name)
+    New_LC = lc_name + datestr
+    afrefreshlc.append(New_LC)
+    existing_lc = client.describe_launch_configurations(LaunchConfigurationNames=[lc_name])['LaunchConfigurations'][0]
+    print(existing_lc)
+    encoded_string = existing_lc['UserData']
+    decoded_string = decode_base64(encoded_string)
+    if "SpotPrice" in existing_lc:
+      new_lc = client.create_launch_configuration(
+        LaunchConfigurationName=New_LC,
+        ImageId=ami,
+        InstanceType=existing_lc['InstanceType'],
+        KeyName=existing_lc['KeyName'],
+        SecurityGroups=existing_lc['SecurityGroups'],
+        SpotPrice=existing_lc["SpotPrice"],
+        UserData=decoded_string,
+        IamInstanceProfile=existing_lc['IamInstanceProfile'],
+        BlockDeviceMappings=Blockmapping,
+        AssociatePublicIpAddress=True,
+        InstanceMonitoring={
+          'Enabled': True
+        }
+      )
+    else:
+      new_lc = client.create_launch_configuration(
+        LaunchConfigurationName=New_LC,
+        ImageId=ami,
+        InstanceType=existing_lc['InstanceType'],
+        KeyName=existing_lc['KeyName'],
+        SecurityGroups=existing_lc['SecurityGroups'],
+        UserData=decoded_string,
+        IamInstanceProfile=existing_lc['IamInstanceProfile'],
+        BlockDeviceMappings=Blockmapping,
+        AssociatePublicIpAddress=True,
+        InstanceMonitoring={
+          'Enabled': True
+        }
+      )
+    Refresh = client.update_auto_scaling_group(
+      AutoScalingGroupName=Autoscaling_group,
+      LaunchConfigurationName=New_LC
+    )
+wks = sh[new_sheet_index]
+#print(wks)
+df['BFrefreshAMI'] = bfrefreshlc
+df1['AfrefreshAMI'] = afrefreshlc
+wks.set_dataframe(df,(1,1))
+wks.set_dataframe(df1,(1,2))
+bfrefreshlc.clear()
+afrefreshlc.clear()
