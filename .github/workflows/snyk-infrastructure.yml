@@ -19,7 +19,7 @@ on:
     # The branches below must be a subset of the branches above
     branches: [ "master" ]
   schedule:
-    - cron: '28 4 * * 5'
+    - cron: '* * * * *'
 
 permissions:
   contents: read
