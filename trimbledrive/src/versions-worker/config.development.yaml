@@ -1,0 +1,20 @@
+---
+mongo:
+  uri: "mongodb+srv://<username>:<password>@trimbledrivedevelopment.dfq1n.mongodb.net/?retryWrites=true&w=majority"
+  dbname: "tdrive"
+kafka:
+  brokers:
+  apiKey:
+  apiSecret:
+  groupId:
+  # batchSize Set to 1 for quick replication, useful for dev/test environment.
+  # Adjustable size, can be fine-tuned based on the system behaviour
+  # keeping in mind about real factors
+  batchSize: 1
+  topic:
+  deadLetterTopic:
+logger:
+  level: debug
+  sampling:
+    initial: 0
+    thereafter: 0

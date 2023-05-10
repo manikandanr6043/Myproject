@@ -1,0 +1,83 @@
+name: Performance Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseurl:
+        required: true
+        type: choice
+        description: The base url to run the tests for
+        options:
+          - "https://tdrive-api-int-e5bfh0cfeygqebgh.z01.azurefd.net"
+          - "https://tdrive-api-aotavin-b2efgbhce8f0gweh.z01.azurefd.net"
+          - "https://tdrive-api-ramkumn-dghtcvggdxgeemc6.z01.azurefd.net"
+          - "https://tdrive-api-msetty.ashyisland-892be597.westeurope.azurecontainerapps.io"
+      test-script:
+        required: true
+        type: choice
+        description: The test script to run
+        options:
+          - "./tests/k6/load.js"
+          - "./tests/k6/smoke.js"
+          - "./tests/k6/soak.js"
+          - "./tests/k6/spike.js"
+          - "./tests/k6/stress.js"
+
+jobs:
+  run-perf-test:
+    permissions:
+      id-token: write
+      contents: read
+      checks: write
+    runs-on: ubuntu-latest-8-cores
+    env:
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: true
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          role-to-assume: ${{secrets.INVOKE_TID4_LAMBDA_ROLE_ARN}}
+          role-session-name: GitHubDeployment
+          aws-region: eu-west-1
+      - id: test-user
+        uses: ./.github/actions/acquire-tid-token
+        with:
+          user_name: "tdrive-user1@trimbleautomation.com"
+          user_pwd: ${{ secrets.TEST_AUTOMATION_USER1_PW_PROD }}
+          app_key: ${{ vars.TEST_AUTOMATION_APP_CONSUMER_KEY_PROD }}
+          app_name: ${{ vars.TEST_AUTOMATION_APP_NAME }}
+          app_callback: ${{ vars.TEST_AUTOMATION_APP_CALLBACK }}
+          tid_env: "prod"
+
+      - name: Run Datadog agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          container_name: datadog
+          image_name: datadog/agent
+          datadog_site: datadoghq.com
+          api_key: ${{ secrets.DD_API_KEY }}
+          extra_env: DD_DOGSTATSD_NON_LOCAL_TRAFFIC=1
+
+      # cannot use the grafana/k6-action because it cannot connect to DD agent by some reason
+      - name: Install k6
+        shell: bash
+        run: |
+          curl https://github.com/loadimpact/k6/releases/download/v0.40.0/k6-v0.40.0-linux-amd64.tar.gz -L | tar xvz --strip-components 1
+      - name: Run local k6 test
+        shell: bash
+        run: |
+          export K6_STATSD_ENABLE_TAGS=true
+          ./k6 run --out json=k6-results.json --out statsd --tag STACK_NAME=${{ inputs.baseurl }} --env TC_TOKEN=${{ steps.test-user.outputs.token }} --env BASE_URL=${{ inputs.baseurl }} ${{ inputs.test-script }} >> k6-summary.txt || true
+          cat k6-summary.txt
+          grep -v "running (" k6-summary.txt | grep -v "bad_requests " | grep -v "default " >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload perf tests results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: k6-results
+          path: k6-results.json
+          retention-days: 1

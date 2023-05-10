@@ -1,0 +1,38 @@
+name: "Go Vulnerability Checker"
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+
+# Cancel in-progress runs of the same workflow for the same branch, we are interested in checking only the latest commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  govuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'src/api/go.mod'
+          check-latest: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: date
+      - name: Run govulncheck
+        shell: bash
+        run: |
+          for module in ./src/api ./src/versions-worker ./src/commit-processor ./src/common-go/api_error ./src/common-go/constants ./src/common-go/requestcontext ./src/common-go/repository ./src/common-go/configuration
+          do
+            cwd=$(pwd)
+            cd $module
+            echo Scanning $module...
+            govulncheck ./...
+            cd $cwd
+          done

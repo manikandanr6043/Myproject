@@ -1,0 +1,18 @@
+name: Combine Dependabot PRs
+
+on:
+  workflow_dispatch:
+
+# Every repo push need to be sequentially processed as we deploy to common INT environment version by version
+concurrency: ${{ github.workflow }}
+
+jobs:
+  combine-prs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: combine-prs
+        id: combine-prs
+        uses: github/combine-prs@v3.1.1
+        with:
+          ci_required: false

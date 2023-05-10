@@ -1,0 +1,46 @@
+name: "Validate API spec"
+
+on:
+  pull_request:
+    branches: [ main ]
+
+# Cancel in-progress runs of the same workflow for the same branch, we are interested in checking only the latest commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  validate-api-spec:
+    runs-on: ubuntu-latest
+    env:
+      API_SPEC_FILE: ./docs/apispec.yaml
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Validate OpenAPI spec
+        shell: bash
+        run: |
+          response=$(curl -X POST -H 'Content-Type: application/yaml' -H 'Accept: application/json' --data-binary @$API_SPEC_FILE https://validator.swagger.io/validator/debug)
+          echo "$response"
+          if [[ "$response" != "{}" ]]; then
+            messages=$(jq ".messages[]?" <<< $response)
+            errors=$(jq ".schemaValidationMessages[] | select(.level == \"error\")" <<< $response)
+            warnings=$(jq ".schemaValidationMessages[] | select(.level == \"warning\")" <<< $response)
+            if [ -z "$errors" ]
+            then
+                echo "Swagger file is valid, with warnings!"
+            else
+                echo "Swagger file is not valid!"
+                exit 1
+            fi
+          fi
+      - name: Download Spectral trimble ruleset
+        shell: bash
+        run: curl -o trimble.spectral.yml https://raw.githubusercontent.com/jbend/tdp-spectral-rules/main/rulesets/trimble.yaml
+      - name: Run Spectral lint
+        uses: stoplightio/spectral-action@latest
+        with:
+          file_glob: 'docs/*.yaml'
+          spectral_ruleset: 'trimble.spectral.yml'

@@ -1,0 +1,2397 @@
+---
+openapi: 3.0.1
+info:
+  title: Trimble Drive API
+  description: |-
+    The service provides capabilities for managing files in the context of Connected Data Environment
+    serving the Industry Clouds needs.
+    A "file" is an unstructured blob of information with set of standard and custom metadata attributes.
+
+    **PRIOR TO USING THIS API, YOU MUST AGREE TO OUR [TERMS OF USE](https://connect.trimble.com/terms_of_service.html)**
+
+    # Main Capabilities
+
+    * Managing hierarchical file structures (files organized in to hierarchies with folders)
+        * The "file" is an unstructured BLOB content with the metadata end user usually expects from the familiar
+    "file" concept
+        * File hierarchies are organized as "file spaces" to provide logical isolation. The file spaces can be visible
+    to end users or completely hidden and used by internal systems to manage unstructured data/files
+    * Basic file and folder operations: create/upload, move/rename, delete, copy
+        * hierarchical/recursive operations (e.g. delete folder) are implemented asynchronously
+        * concurrency control on all operations including upsert, insert-only and update-only semantics
+    * Strict versioning for files and folders. All changes are trackable and addressable. User is able to see the
+    state of the full folder structure as it was at any moment of the history. User is able to refer to any specific
+    version of the file.
+        * The monotonically increasing version number for any change made to the file or folder on the server
+    (even those not visible to the user).
+        * Separate tracking of the changes in files *content*, so user can easily see if new version of the file
+    related to change in metadata or in the content.
+        * Deletion operations only marks resource as "deleted", but the resource is still accessible to consumer
+    using history APIs
+    * Large content support with multi-part upload
+        * single part uploads support files with content up to 5GB
+    * Export and import folder operations as archives
+        * import operations can be e.g. used as a batch operation to create a folder/file structure from template.
+    * Representation formats attached to files (including thumbnails support as a "first citizen").
+        * Client provided representations as well as server side assimilation.
+    * File naming convention enforcement based in ISO 19650
+    * Malware scanning for file content
+    * Access control: TODO what kind of AC model? Access control can be defined in following terms:
+        * subjects: TID users, TID applications
+        * subject assertions: user groups and roles, account members and roles,
+        * objects: folders, files with hierarchical inheritance
+    * Special file attributes: checkout (protection) status
+    * Custom metadata
+    * Sync capabilities for occasionally connected clients
+    * Push WebSocket user level notifications for online clients
+    * Integration with the Trimble Search Engine to include file metadata and custom metadata to the global search
+    * Integration with Trimble Processing Framework to access files from jobs
+    * Integration with Trimble Eventing
+
+    # Authentication
+
+    Trimble Connect APIs can be accessed using the following steps:
+     1. Register an application with Trimble ID
+     2. Get a Trimble ID Access Token
+     3. Use the Trimble ID Access Token
+
+    ## Step 1: Register an application with Trimble ID
+
+    This is a one time step.
+
+    ### External integrators:
+
+    Please register your application by following the instructions at
+    [https://connect.trimble.com/integrator-sign-page](https://connect.trimble.com/integrator-sign-page).
+    With this information, we will register your application, subscribe it to the needed APIs, and then share back a
+    **Consumer Key** and **Consumer secret** you will use to authenticate with Trimble ID and the Trimble Connect API.
+
+    ### Trimble-internal integrators:
+
+    You can register your application with the Trimble ID via self-service at
+    [Cloud console](https://console.trimble.com/)
+
+    ## Step 2: Get a Trimble ID Access Token
+
+    Implement authentication with an OAuth 2.0 client component using the Authorization Code grant type.
+    See the Trimble Connect [Authentication Guide](https://community.trimble.com/viewdocument/
+    trimble-connect-authentication-guid) for details.
+
+    ## Step 3: Use the Trimble ID Access token
+
+    To use the public Trimble Connect APIs, you will need to add the **Authorization** header to your requests.
+    Replace **access_token** with the actual value you received from **Step 2**.
+     `Authorization: Bearer access_token`
+
+    # Regional Endpoints
+    The service offers regional endpoints that you can use to make your requests. The resources in each region are
+    independent of similar resources in other regions.
+
+    # Common Concepts
+
+    In most cases, this API uses HTTPS requests with JSON-formatted content in requests and responses.
+
+    ## Cross-Origin Resource Sharing
+
+    This API features Cross-Origin Resource Sharing (CORS) implemented in compliance with the
+    [W3C spec](https://www.w3.org/TR/cors/) that allows cross-domain communication from the browser.
+    All responses have a wildcard same-origin which makes them completely public and accessible to everyone,
+    including any code on any site.
+
+    ## Date Format
+
+    All dates in the API use UTC and are strings in the [ISO 8601 combined date and time representation
+    format](https://en.wikipedia.org/wiki/ISO_8601#Combined_date_and_time_representations)
+    Example `2015-05-15T15:50:38.311Z`.
+
+    ## Folder Path Format
+
+    Paths are strings made up of directory names like (`/directory/abc/`).
+
+    * File paths are subject to the following constraints.
+      * directory and file names cannot contain `\`, `.` or a space
+      * file path cannot contain `:`, `?`, `<`, `>`, `*`, `|`
+      * file names and directories must be less then 255 characters
+      * names cannot be `com<1-9>` or `lpt<1-9>` `con`, `nul`, `prn`, `aux` (case insensitive).
+    including the name followed by a file extension ex.` aux.txt`
+      * cannot contain control characters with integer representation 1-31
+      * cannot contain null character with integer representation 0
+
+    _Note_: File and Folder naming constraints can be configured at the space level. During the space creation user can specify whether naming restrictions need to be enforced or not.
+    Once set during the space creation, this setting can never be updated later. By default, restrictions will be enabled.
+
+    ## Eventual Read Consistency
+
+    The API responses are eventually consistent.
+    When you read data from the service, the response might not reflect the results of the most recently completed
+    write operation. The response might include some stale data due to caching
+    in place. If you repeat your read request after a short time, the response should return the latest data.
+
+    ## Paginated Responses
+
+    All endpoints that return collection of resources follow the same schema for query parameters and
+    response structure to paginate the results.
+    Pagination allows to limit the size of the large responses and aimed to improve the responsiveness and overall
+    performance when fetching large result sets. The overall latency is improved
+    by parallelization of data processing and transfer.
+
+    Pagination is cursor-based and client-driven. The requests accept `skipToken` and `top` query parameters.
+
+    If the `skipToken` query parameter is not specified, first page of the result set is returned.
+
+    The `top` parameter informs the server on how many items client
+    wants to receive in a single page. Server returns the requested number of items
+    if they are available or less (for the last page in the result set).
+    If `top` parameter is not specified then server return maximum page size by default.
+
+    The maximum page size is different for each endpoint and specified as part of the endpoint
+    description. If the `top` parameter is greater than endpoint can support server
+    will return error to help client avoid bug in pagination implementation.
+
+    ## Common Query Parameters
+
+    In addition to query parameters (`top`, `skipToken`) used for paging responses there are several query
+    parameters that are commonly used across all APIs.
+
+    * `deleted` - this query parameter is used to work with resources marked as "deleted". The default APIs
+    (except APIs that access specific versions) behavior is to respond with 404 error when resource marked as deleted
+    is requested (or don't return deleted resource as part of the listing/find API). If this parameter is specified
+    then deletion marker will be ignored and all resources are returned.
+    * `fields` - query parameter allow to specify what additional resource properties should be returned in the
+    response. By default service returns minimum set of resource properties for optimum performance.
+
+    # Data Model
+
+    ## File space
+
+    The conceptual data model exposed by service consist of following resources: file space, files and folders.
+    The file space is a logical container for files and folders. It is a unit of horizontal scalability and mechanism
+    of the isolation for group of resources.
+    Files and folders are two types of objects than belong to the file space. In this sense the file space can be
+    thought as a collection of objects (files and folders).
+    File space is a scope for search, synchronization and notification mechanisms. For scalability reasons service
+    does not provide such mechanisms on a global scope.
+
+    All API operations work in the file space context (file space identifier is always part of the request).
+
+    ## File, folders, operations, versioning
+
+    Files and folders as objects in the file space have number of attributes (properties).
+    Many properties are common (like name, access control lists, creation and modification timestamps, size, etc).
+    This is reflected in API surface as common operations and data models.
+    But there are also attributes and operations that are applicable only for specific type of the object
+    (e.g. content and representation formats, checkout status are applicable only to files).
+
+    ## Identification
+
+    File spaces, files and folders are identifiable resources.
+    The identifier is an opaque string. The identifier can be given by the client when resource is created or
+    assigned by the service automatically.
+    In later case service uses a randomly generated GUID.
+
+    Identifiers given to resources by clients allow easy correlation of file service resources with external resources.
+    E.g. in the project files use case a file space can be created with the same identifier as `projectId`.
+
+    The file space identifier must be globally unique.
+    Objects (file and folder) identifiers must be unique in the scope of the file space. File and folder in the same
+    file space cannot have same identifiers.
+
+    ## Versioning
+
+    Both files and folders are strictly versioned.
+    To identify specific versions of the resources a `version` property is used in combination with the
+    resource identifier.
+
+    The `version` property is automatically generated by the service, it is a monotonically increasing number.
+    The Trimble Drive resource versioning model uses the approach similar to semantic versioning used in the software development.
+    The “major version” component is used to indicate the change in the content of the file.
+    The “minor version” component indicates a change in any resource attribute other than content.
+    When new content is uploaded it always increments the “major version” and resets the “minor version” to “0”.
+    This approach allows to evolve the resource in two dimensions and e.g. make a change in the older (not latest) version of the resource
+    by “releasing” increment in a minor version.
+
+    Not all mutation operations make sense on older (not latest) versions. Following operations are allowed only on the latest version:
+    - Deletion or restore of the file
+    - Uploading new content
+
+    The “name” (AKA “rename”) and the “parentFolderId” (AKA “move”) attributes are special in a way that constraints are enforced on them for the “latest” version.
+    For the versions these constraints are NOT enforced and we can allow the changes in these attributes as in any other custom attributes.
+
+    Note that the versioning behaves different for folders, the major version gets incremented each time when a folder is reamned, moved or deleted.
+    Also there is no support for patching a old version incase of folder resource.
+
+    Each file space uses internal "clock" to order all the changes in the scope of the space.
+    This mechanism is used to enable ordering of events in the scope of file space and for implementing synchronization capability for occasionally connected clients.
+    Changes and events between file spaces are NOT ordered enabling a horizontal scalability.
+
+    The "custom metadata" is not versioned together with the file/folder it is attached to.
+    This allows to classify/add attirbutes to the file without changing it's version.
+    E.g. approver can "approve" a file by attaching a needed metadata attribute to the file version without
+    changing the file version.
+
+    Changing ACL or "rules" also does not change the file version.
+
+    Data that is not versioned together with the file (custom metadata, ACL, rules) has it's own metadata
+    that captures the timestamp and who has changed tit last time.
+
+    ## Async Operations
+
+    Some of the operation like delete, export, undelete folder are performed asynchronously.
+    Such APIs are grouped separately in this document.
+    Clients are requested to make use of the job details API to get status of these ASYNC API requests.
+
+    ## System Metadata
+
+    The properties service supports in addition to actual file content is referred to as "metadata".
+    Service supports usual file metadata like name, size, timestamps, reference to originator of the change, etc.
+    Also thumbnail is supported as a first class citizen.
+
+    Service supports following special attributes with special business logic applied.
+    * Check in/out
+    * Representation formats
+
+    # Error Handling
+
+    ## Handling Errors and Retry Logic
+
+    Common HTTP Response Status Codes are used.
+    The response body for all error responses are in the same format and include the error code and message.
+
+    When you send requests to and get responses from the Service API, you might encounter two types of API errors
+    * __Client errors__ - Client errors are indicated by a 4xx HTTP response code. Client errors indicate
+    that the service found a problem with the client request. This can include such things as an authentication
+    failure or missing required parameters. Fix the issue in the client application before submitting the request again.
+    * __Server errors__ - Server errors are indicated by a 5xx HTTP response code and need to be resolved by Trimble.
+    You may resubmit/retry the request until it succeeds.
+
+    For each API error, the API Gateway returns the following values
+    * A status code, for example, `400`
+    * An error code, for example, `ValidationException`
+    * An error message, for example, `Supplied AttributeValue is empty, must contain exactly one of the
+    supported data types`
+
+    ## Error Codes (Client and Server Errors)
+
+    HTTP status codes indicate whether an operation is successful or not.
+    A response code of 2xx indicates that the operation was successful. Other error codes indicate either a
+    client error (4xx) or a server error (5xx).
+    The error table lists the errors returned by the service. Some errors are resolved if you retry the same request.
+    As a general rule, the timeout errors, network errors, throttling errors, and 5xx errors may be retried.
+    The 401 error code usually indicates expired credentials and should be retried after refreshing the access token.
+    The error table indicates which errors are likely to be resolved with successive retries.
+
+    If the value of the Retry column is
+    * __Yes__ - Submit the same request again.
+    * __Yes if idempotent__ - Submit the same request again, but only if the given method has been
+    implemented with idempotence.
+    * __No__ - Fix the problem on the client-side before submitting a new request.
+
+    For more information about retrying requests, see Error Retries and Exponential Backoff.
+
+    | HTTP Status Code | Error code                            | Retry                                             |
+    | ---------------- | ------------------------------------- | ------------------------------------------------- |
+    | 400              |  Bad Request Exception                | No                                                |
+    | 401              |  Unauthorized Exception               | No, could be retried after acquiring a new token  |
+    | 403              |  Access Denied Exception              | No                                                |
+    | 404              |  Not Found Exception                  | No                                                |
+    | 409              |  Conflict Exception                   | No                                                |
+    | 422              |  Unprocessable Entity Exception       | No                                                |
+    | 429              |  Too Many Requests Exception          | Yes                                               |
+    | 500              |  Internal Service Failure Exception   | Yes                                               |
+    | 502              |  Bad Gateway Exception                | Yes if idempotent                                 |
+    | 503              |  Service Unavailable Exception        | Yes                                               |
+    | 504              |  Endpoint Request Timed-out Exception | Yes if idempotent                                 |
+
+    ## Catching Errors
+
+    For your application to run smoothly, you need to build in logic to catch and respond to errors.
+    One typical approach is to implement your request within a try block or if-then statement.
+    The client-side SDKs typically perform retries and error checking out of the box.
+
+    The error code and description are always send in the request response body in addition to HTTP status code.
+    To troubleshoot the problem please capture the request identifier using the `X-Trimble-RefId`, `X-Azure-Ref`, `x-amzn-RequestId` HTTP response headers. Inform the value received in these headers to support team.
+
+    ## Error Retries and Exponential Backoff
+
+    Numerous components on a network, such as DNS servers, switches, load balancers,
+    and others can generate errors anywhere in the life of a given request.
+
+    The usual technique for dealing with these error responses in a networked environment
+    is to implement retries in the client application.
+    This technique increases the reliability of the application and reduces operational costs for the developer.
+
+    Official Trimble Connect SDKs implement automatic retry logic. There is also configuration available
+    to change the retry settings.
+
+    If you're not using the official SDKs, you should retry original requests that receive server errors (5xx).
+    However, client errors (4xx, other than a TooManyRequestsException) indicate you need to
+    revise the request itself to correct the problem before trying again.
+
+    In addition to simple retries, it is recommended to use an exponential backoff algorithm for better flow control.
+    The idea behind exponential backoff is to use progressively longer waits between retries
+    for consecutive error responses.
+    For example, you might let one second elapse
+    before the first retry, four seconds before the second retry, 16 seconds before the third retry, and so on.
+    However, if the request has not succeeded after a minute, the problem might be a hard limit and not the
+    request rate.
+    For example, you may have reached the maximum number of pipelines allowed. Set the maximum
+    number of retries to stop around one minute.
+
+    # Payload compression
+
+    The service accepts `gzip` and `br` compressed request payloads. The `Content-Encoding` header must be sent in the request
+    to decode the request payload properly.
+
+    The service supports the following content encodings for responses:
+    * `gzip`
+    * `br`
+    * `identity`
+
+    Only responses larger than 1KB might be encoded. Small responses are sent without encoding.
+
+    The encoding (compression) method can be negotiated with the `Accept-Encoding` header.
+    The following `Accept-Encoding` header formats, according to the [RFC 7231](https://tools.ietf.org/html/
+    rfc7231#section-5.3.4) specification, are supported:
+    * `Accept-Encoding:br,gzip`
+    * `Accept-Encoding:` - If the Accept-Encoding header is present and empty, only the unencoded content is acceptable.
+    * `Accept-Encoding:*` - This is the default value if the header is not present. This directive does not suggest that any algorithm is supported but indicates that no preference is expressed. Service will decide on the best compression method.
+    * `Accept-Encoding:br;q=0.5,gzip=1.0`
+    * `Accept-Encoding:gzip;q=1.0,identity;q=0.5,*;q=0`
+    If the header is not set, the default value is `*` as defined in RFC 7231. In such cases,
+    the payload is compressed with best supported compression method.
+
+    # Limits
+
+    The service has the following limitations:
+    * Maximum number of versions of all files and folders in a single file space: 1M.
+    * Maximum file/folder name length: 255 characters
+    * Maximum full path length: no limits?
+    * Maximum depth of the folder hierarchy: no limits
+    * Maximum number of items in a single folder: no limits
+    * Allowed characters in folder and file names: Unicode except NUL, " * / : < > ? \ |
+    * Maximum content length for single part upload: 5GB
+    * Single part length for multi-part upload: 5MB - 5GB
+    * Id property maximum length: 128 characters. Only url-safe characters are allowed:
+    ALPHA  DIGIT  "-" / "." / "_" / "~"
+    * Maximum number of custom metadata on a single file: ?
+    * Maximum length of a custom metadata name: 64 characters
+    * Maximum length of a custom metadata value: 128 characters
+    * Maximum number of representation formats attached to the file (including thumbnail): 5
+    * Maximum length of a custom role name: 255 characters
+    * Maximum number of custom roles in a filespace: 25?
+    * Maximum size of `THUMBNAIL` content: 5Mb
+    * Maximum number of file upload contents (excluding main file): 5
+    * Maximum expiry time of pre-signed upload and download urls : 12 hours
+    * Minimum expiry time of pre-signed upload and download urls : 1 minute
+
+  termsOfService: https://connect.trimble.com/terms-service
+  contact:
+    email: tc-core-services-ug@trimble.com
+  license:
+    name: "Trimble Inc.,"
+    url: https://connect.trimble.com
+  version: "1.0"
+security:
+  - Bearer: [ ]
+tags:
+  - name: Filespace
+  - name: Folders
+  - name: Files
+paths:
+  /spaces:
+    post:
+      tags:
+        - Filespace
+      summary: Create Filespace
+      description: "This API creates a new filespace. If identifier is provided as part of the request it will be assigned to new filespace on creation otherwise service will generate a new random identifier.\
+                  \ By default only creator has access to all data in the filespace. <br>\
+                  _Note that a special/root folder with the same name as filespace will be created internally during filespace creation, this folder acts as the parent folder for all the items in the filespace. Root folder details can be accessed just like any other folder by supplying the identifier, there will not be any parent for this folder._ "
+      operationId: createFileSpace
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFileSpaceRequest'
+        required: true
+      responses:
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: The filespace with the same identifier already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "201":
+          description: Resource created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileSpaceDetails'
+  /spaces/{spaceId}:
+    get:
+      tags:
+        - Filespace
+      summary: Get Filespace details
+      description: "Get FileSpace Details"
+      operationId: getFileSpace
+      parameters:
+        - name: spaceId
+          in: path
+          description: Filespace identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileSpaceDetails'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - Filespace
+      summary: Update filespace details
+      description: "Update FileSpace Details"
+      operationId: updateFileSpace
+      parameters:
+        - name: spaceId
+          in: path
+          description: Filespace identifier
+          required: true
+          schema:
+            type: string
+        - name: deleted
+          in: query
+          description: "If specified and true, resource is updated (and undeleted) even if it is marked as deleted. Otherwise 404 error returned for deleted resource."
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileSpaceUpdateRequest'
+      responses:
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileSpaceDetails'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Filespace
+      summary: Delete filespace
+      description: "Mark the space as deleted. After this content of the space become not accessible. The space and it's content is not physically deleted immediately and can be restored. The space id stays reserved."
+      operationId: deleteFileSpace
+      parameters:
+        - name: spaceId
+          in: path
+          description: Filespace identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /spaces/{spaceId}/folders:
+    post:
+      tags:
+        - "Folders"
+      summary: "Create Folder"
+      description: "You can create a new folder using this action."
+      operationId: "createFolder"
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: fields
+          in: query
+          description: "Option to specify fields to be returned in the response. The minimum set of required fields are  returned by default for optimum performance."
+          required: false
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+      requestBody:
+        description: ""
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFolderRequest"
+        required: true
+      responses:
+        "201":
+          description: "Created"
+          headers:
+            ETag:
+              description: "Weak ETag that can be used for the concurrency control."
+              schema:
+                type: "string"
+            Location:
+              description: "The location of a created resource."
+              schema:
+                type: "string"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolderDetailsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /spaces/{spaceId}/folders/{folderId}:
+    get:
+      tags:
+        - Folders
+      summary: Get Folder Details
+      description: "Get Folder details for a given folder identifier. By default, this operation returns `404 NotFound` in case of folder not present or if the resource is in deleted state, this default behavior can be modified with the `deleted` query parameter. <br/>\
+                    To fetch a specific version information, optional query parameter `version` can be specified. Specific version information will be returned regardless of the deletion state."
+      operationId: getFolderDetails
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: deleted
+          in: query
+          description: "If specified and true, resource is returned even if it is marked as deleted. Otherwise 404 error returned for deleted resource."
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: fields
+          in: query
+          description: "Option to specify fields to be returned in the response. The minimum set of required fields are  returned by default for optimum performance."
+          required: false
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderDetailsResponse'
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - "Folders"
+      summary: "Move/Rename Folder"
+      description: "You can use this API to move/rename the Folder.\n\nTo move a folder,\
+        \ update the `parentFolderId` attribute.\n\nThe API also supports **If-Match**\
+        \ optional header to provide the version, so you can verify you are working\
+        \ on the latest version.\n\nIf version provided in the **If-Match** header is not\
+        \ latest, error Response with Response code **412** will be send back to\
+        \ the caller.\n\nIf the **If-Match** header value\
+        \ is *  or header not provided, actions will be performed on the latest version."
+      operationId: "updateFolder"
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: "folderId"
+          in: "path"
+          description: "ID of the Folder."
+          required: true
+          schema:
+            type: "string"
+        - name: "If-Match"
+          in: "header"
+          schema:
+            type: "string"
+        - name: fields
+          in: query
+          description: "Option to specify fields to be returned in the response. The minimum set of required fields are  returned by default for optimum performance."
+          required: false
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+      requestBody:
+        description: ""
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFolderRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          headers: { }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolderDetailsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "412":
+          description: Precondition Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - "Folders"
+      summary: "Delete Folder"
+      description: "You can use this API to mark the folder as deleted.\n\nThe API also supports **If-Match** optional header to provide\
+        \ the version, so you can verify you are working on the latest version.\n\n\
+        If version provided in the **If-Match** header is not latest, error Response\
+        \ with Response code **412** will be send back to the caller.\
+        \n\nIf the **If-Match** header value is *  or header not provided,\
+        \ actions will be performed on the latest version."
+      operationId: "deleteFolder"
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: "folderId"
+          in: "path"
+          description: "ID of the Folder."
+          required: true
+          schema:
+            type: "string"
+        - name: "If-Match"
+          in: "header"
+          schema:
+            type: "string"
+        - name: fields
+          in: query
+          description: "Option to specify fields to be returned in the response. The minimum set of required fields are  returned by default for optimum performance."
+          required: false
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+      responses:
+        "200":
+          description: OK
+          headers: { }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolderDetailsResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "412":
+          description: Precondition Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /spaces/{spaceId}/folders/{folderId}/children:
+    get:
+      tags:
+        - Folders
+      summary: List all children under the given folder
+      description: "List all children under the given folder. Pagination is supported."
+      operationId: listFolderChildren
+      parameters:
+        - name: spaceId
+          in: path
+          description: The filespace identifier.
+          required: true
+          schema:
+            type: string
+        - name: folderId
+          in: path
+          description: The folder identifier.
+          required: true
+          schema:
+            type: string
+        - name: deleted
+          in: query
+          description: "If specified and true, in cases of deleted given folder (`folderId`), given folder state will be ignored and children marked as deleted will be also included into response. \
+            By default, this is **`false`**, and in case of deleted folder (`folderId`), **`404 FolderNotFound`** will be returned \
+            and children marked as deleted will be excluded in the response"
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: skipToken
+          in: query
+          description: "Optimized cursor to fetch items. `skipToken` represents a position in the queried collection. \
+            If not provided, first page of results will be returned."
+          required: false
+          schema:
+            type: string
+        - name: top
+          in: query
+          description: "Maximum amount of items to return in the response. <br/>It is\
+            \ not guaranteed that exact number of items will be returned, but up to\
+            \ the provided value as max. <br/>The maximum value for this parameter is\
+            \ **`10000`** and the default value will be same as the maximum value. <br/> If requested number of items exceeds the limit **10000**, then\
+            \ the request will fail with an error message. <br/>Note that max items limit might\
+            \ be increased in the future, clients should not make any assumptions on the number of items returned by default."
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 10000
+            default: 10000
+        - name: orderBy
+          in: query
+          description: "Ordering by specific field for returned items. Items are default ordered by created datetime.\
+            Default order is descending. The syntax would be **`orderBy=fieldName asc|desc `**.<br/>\
+            Valid example values: **`createdOn`**, **`createdOn asc`**, **`createdOn desc`**. <br/>\
+            Sorting by the following fields **`createdOn`**, **`modifiedOn`** are supported in a performant way. \
+            Sorting by other fields are also supported but might NOT be performant for folders with large number of children."
+          required: false
+          schema:
+            type: string
+        - name: fields
+          in: query
+          description: "Option to specify fields to be returned in the response. The minimum set of required fields are  returned by default for optimum performance."
+          required: false
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolderChildrenResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /spaces/{spaceId}/folders/{folderId}/versions/{version}:
+    get:
+      tags:
+        - Folders
+      summary: Get Folder Version Details
+      description: "This API will fetch the folder details for the given folder\
+          \ version"
+      operationId: getFolderVersionDetails
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: folderId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          description: "The value can be either full version or only the major version.
+            If only a major version is specified (e.g. “1” or “1.*”) in the url -> latest minor version is returned.
+            If full version is specified (e.g. “1.3”) -> the specific version is returned"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: fields
+          in: query
+          description: "Option to specify fields to be returned in the response. The minimum set of required fields are  returned by default for optimum performance."
+          required: false
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: "Weak ETag that can be used for the concurrency control."
+              schema:
+                type: "string"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderVersionDetailsResponse'
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /spaces/{spaceId}/folders/{folderId}/versions:
+    get:
+      tags:
+        - Folders
+      summary: List Folder Versions
+      description: "List all versions of a given folder. Pagination is supported."
+      operationId: listFolderVersions
+      parameters:
+        - name: spaceId
+          in: path
+          description: The filespace identifier.
+          required: true
+          schema:
+            type: string
+        - name: folderId
+          in: path
+          description: The folder identifier.
+          required: true
+          schema:
+            type: string
+        - name: deleted
+          in: query
+          description: "If specified and true, resource is returned even if it is marked as deleted. Otherwise 404 error returned for deleted resource."
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: skipToken
+          in: query
+          description: "Optimized cursor to fetch items. `skipToken` represents a position in the queried collection. \
+            If not provided, first page of results will be returned."
+          required: false
+          schema:
+            type: string
+        - name: top
+          in: query
+          description: "Maximum amount of items to return in the response. <br/>It is\
+            \ not guaranteed that exact number of items will be returned, but up to\
+            \ the provided value as max. <br/>The maximum value for this parameter is\
+            \ **`10000`** and the default value will be same as the maximum value. <br/> If requested number of items exceeds the limit **10000**, then\
+            \ the request will fail with an error message. <br/>Note that max items limit might\
+            \ be increased in the future, clients should not make any assumptions on the number of items returned by default."
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 10000
+            default: 10000
+        - name: orderBy
+          in: query
+          description: "Ordering by specific field for returned items. Items are default ordered by version.\
+            Default order is ascending. The syntax would be **`orderBy=fieldName asc|desc `**.<br/>\
+            Valid example values: **`version`**, **`version asc`**, **`version desc`**.<br/>\
+            Sorting by the following fields **`createdOn`**, **`modifiedOn`**,**`version`** are supported in a performant way. \
+            Sorting by other fields are also supported but might NOT be performant."
+          required: false
+          explode: false
+          schema:
+            type: string
+        - name: fields
+          in: query
+          description: "Option to specify fields to be returned in the response. The minimum set of required fields are  returned by default for optimum performance."
+          required: false
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+        - name: from
+          in: query
+          description: "From version filter criteria.The value can be either full version (e.g. “1.1“) or only the major version (e.g. “1” or “1.*”) in the url"
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          description: "To version filter criteria.The value can be either full version (e.g. “1.1“) or only the major version (e.g. “1” or “1.*”) in the url"
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListFolderVersionDetailsResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /spaces/{spaceId}/uploads:
+    post:
+      tags:
+        - Files
+      summary: File upload
+      description: "Package upload operation, Along with main (so called 'source') file content, this operation \
+        allows to upload representation formats attached to the main file content, e.g. `TRB`, `PDF`, `THUMBNAIL` etc.\
+        The `THUMBNAIL` content is treated in a special way (All file APIs provide thumbnailUrl in response \
+        which refers to the content stored as `THUMBNAIL`),all other contents are just stored as is.\
+        You can use Get File Upload Details API to check the upload status. Please make sure to upload the object \
+        only once to each `uploadUrl` (except failed uploads need to be retried using the same uploadUrl to tolerate \
+        transient network errors). If several successful uploads are executed to the the same `uploadUrl`,\
+        the random content from one of the uploads will be picked up for the permanent storage.\
+        Refer examples on how to upload only the main file or main file along with content."
+      operationId: initiateFileUpload
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: urlExpiryInMins
+          in: query
+          description: Number of minutes for which the pre-signed upload URL for the file will be valid.
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+            maximum: 720
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          description: If this header is passed with value `*` in the request the upload
+            will fail if there is already file with same id/name exists in the same parent folder
+          required: false
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileUploadRequest'
+            examples:
+              UploadMainFileOnly:
+                value:
+                  parentFolderId: "e28982f5-ebd8-4a76-97f4-0783fc143f30"
+                  name: "FileName.ext"
+              UploadMainFileWithContent:
+                value:
+                  parentFolderId: "e28982f5-ebd8-4a76-97f4-0783fc143f30"
+                  name: "FileName.ext"
+                  contents:
+                    - format: "THUMBNAIL"
+        required: true
+      responses:
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "202":
+          description: ACCEPTED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /spaces/{spaceId}/uploads/{uploadId}:
+    get:
+      tags:
+        - Files
+      summary: Get File Upload Details
+      description: "File upload details contains the descriptor of the upload operation: the current status of the upload,\
+        the uploadUrl if upload is not completed yet and information passed as an input to the upload operation,\
+        e.g. file name, id, parent, etc. The UploadId exists for 14 days from the time of creation"
+      operationId: getFileUploadDetails
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: urlExpiryInMins
+          in: query
+          description: Number of minutes for which the pre-signed upload URL for the file will be valid.
+          schema:
+            type: integer
+            default : 5
+            minimum : 1
+            maximum : 720
+      responses:
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadDetailsResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /spaces/{spaceId}/files/{fileId}:
+    get:
+      tags:
+        - Files
+      summary: Get File Details
+      description: "This API will fetch the latest version details for the given file\
+          \ Id."
+      operationId: getFileDetails
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: deleted
+          in: query
+          description: "If specified and true, resource is returned even if it is marked as deleted. Otherwise 404 error returned for deleted resource."
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: fields
+          in: query
+          required: false
+          explode: false
+          description: Option to specify fields to be included in the response.
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - downloadUrl
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+        - name: urlExpiryInMins
+          in: query
+          description: Number of minutes for which the pre-signed download URL for the file will be valid.
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+            maximum: 720
+      responses:
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: "Weak ETag that can be used for the concurrency control."
+              schema:
+                type: "string"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDetailsResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - "Files"
+      summary: "Move/Rename/Undelete File"
+      description: "You can rename the file using this API. To move the file, change\
+          \ the `parentFolderId` to the id of the destination folder. \
+          \ \n\n To undelete a deleted file perform this API call with \
+          \ empty request body and deleted param as true.\n\nThe API\
+          \ also supports **If-Match** optional header to provide the version, so\
+          \ you can verify you are working on the latest version.\n\nIf version provided\
+          \ in the **If-Match** header is not latest, error Response with Response\
+          \ code **412** will be send back to the caller with **Errorcode** INVALID_HEADER\
+          \ &\n**Error Message**: If-Match header value is not latest version.\n\n\
+          If the **If-Match** header value is *  or header not provided, actions will\
+          \ be performed on the latest version."
+      operationId: updateFileDetails
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: "fileId"
+          in: "path"
+          description: "ID of the File"
+          required: true
+          schema:
+            type: "string"
+        - name: deleted
+          in: query
+          required: false
+          description: To be passed with value as `true` for restoring a deleed file.
+          schema:
+            type: boolean
+            default: false
+        - name: fields
+          in: query
+          required: false
+          explode: false
+          description: Option to specify fields to be included in the response.
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - downloadUrl
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+        - name: urlExpiryInMins
+          in: query
+          description: Number of minutes for which the pre-signed download URL for the file will be valid.
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+            maximum: 720
+        - name: "If-Match"
+          in: "header"
+          schema:
+            type: "string"
+      requestBody:
+        description: ""
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFileDetailsRequest"
+        required: true
+      responses:
+        "200":
+          description: ""
+          headers:
+            ETag:
+              description: "Weak ETag that can be used for the concurrency control."
+              schema:
+                type: "string"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileDetailsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Files
+      summary: "Delete File"
+      description: "The API also supports **If-Match** optional header to provide\
+          \ the version, so you can verify you are working on the latest version.\n\n\
+          If version provided in the **If-Match** header is not latest, error Response\
+          \ wiith Response code **412** will be send back to the caller with **Errorcode**\
+          \ INVALID_HEADER &\n**Error Message**: If-Match header value is not latest\
+          \ version.\n\nIf the **If-Match** header value is *  or header not provided,\
+          \ actions will be performed on the latest version."
+      operationId: deleteFile
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: "fileId"
+          in: "path"
+          description: "ID of the file"
+          required: true
+          schema:
+            type: "string"
+        - name: "If-Match"
+          in: "header"
+          schema:
+            type: "string"
+        - name: fields
+          in: query
+          required: false
+          explode: false
+          description: Option to specify fields to be included in the response.
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - downloadUrl
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+      responses:
+        "200":
+          description: ""
+          headers:
+            ETag:
+              description: "Weak ETag that can be used for the concurrency control."
+              schema:
+                type: "string"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileDetailsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /spaces/{spaceId}/files/{fileId}/versions/{version}:
+    get:
+      tags:
+        - Files
+      summary: Get File Version Details
+      description: "This API will fetch the file details for the given file\
+          \ version."
+      operationId: getFileVersionDetails
+      parameters:
+        - name: spaceId
+          in: path
+          description: filespace ID
+          required: true
+          schema:
+            type: string
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          description: "The value can be either full version or only the major version.
+            If only a major version is specified (e.g. “1” or “1.*”) in the url -> latest minor version is returned.
+            If full version is specified (e.g. “1.3”) -> the specific version is returned"
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: fields
+          in: query
+          required: false
+          explode: false
+          description: Option to specify fields to be included in the response.
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - downloadUrl
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+        - name: urlExpiryInMins
+          in: query
+          description: Number of minutes for which the pre-signed download URL for the file will be valid.
+          schema:
+            type: integer
+            default: 5
+            minimum: 1
+            maximum: 720
+      responses:
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "200":
+          description: OK
+          headers:
+            ETag:
+              description: "Weak ETag that can be used for the concurrency control."
+              schema:
+                type: "string"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileVersionDetailsResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /spaces/{spaceId}/files/{fileId}/versions:
+    get:
+      tags:
+        - Files
+      summary: List File Versions
+      description: "List all versions of a given file. Pagination is supported."
+      operationId: listFileVersions
+      parameters:
+        - name: spaceId
+          in: path
+          description: The filespace identifier.
+          required: true
+          schema:
+            type: string
+        - name: fileId
+          in: path
+          description: The file identifier.
+          required: true
+          schema:
+            type: string
+        - name: fields
+          in: query
+          required: false
+          explode: false
+          description: Option to specify fields to be included in the response.
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - downloadUrl
+                - name
+                - size
+                - parentFolderId
+                - topActiveParentFolderId
+        - name: deleted
+          in: query
+          description: "If specified and true, resource is returned even if it is marked as deleted. Otherwise 404 error returned for deleted resource."
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: skipToken
+          in: query
+          description: "Optimized cursor to fetch items. `skipToken` represents a position in the queried collection. \
+            If not provided, first page of results will be returned."
+          required: false
+          schema:
+            type: string
+        - name: top
+          in: query
+          description: "Maximum amount of items to return in the response. <br/>It is\
+            \ not guaranteed that exact number of items will be returned, but up to\
+            \ the provided value as max. <br/>The maximum value for this parameter is\
+            \ **`10000`** and the default value will be same as the maximum value. <br/> If requested number of items exceeds the limit **10000**, then\
+            \ the request will fail with an error message. <br/>Note that max items limit might\
+            \ be increased in the future, clients should not make any assumptions on the number of items returned by default."
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 10000
+            default: 10000
+        - name: orderBy
+          in: query
+          description: "Ordering by specific field for returned items. Items are default ordered by version.\
+            Default order is ascending. The syntax would be **`orderBy=fieldName asc|desc `**.<br/>\
+            Valid example values: **`version`**, **`version asc`**, **`version desc`**.<br/>\
+            Sorting by the following fields **`createdOn`**, **`modifiedOn`**, **`version`** are supported in a performant way. \
+            Sorting by other fields are also supported but might NOT be performant."
+          required: false
+          explode: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: "From version filter criteria.The value can be either full version (e.g. “1.1“) or only the major version (e.g. “1” or “1.*”) in the url"
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          description: "To version filter criteria.The value can be either full version (e.g. “1.1“) or only the major version (e.g. “1” or “1.*”) in the url"
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListFileVersionDetailsResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Permission denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    ErrorResponse:
+      title: "The error response."
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: "The error code. A non-empty language-independent string."
+        message:
+          type: string
+          description: A human-readable string describing the error. The `Content-Language` header MUST contain the language code from [RFC5646](https://docs.oasis-open.org/odata/odata-json-format/v4.01/odata-json-format-v4.01.html#rfc5646) corresponding to the language in which the value for message is written.
+    CreateFileSpaceRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier for a new file space can be given in the request.Only url-safe characters are allowed.The id has to be unique and cannot be updated after creation. If id is not specified service will generate unique id.
+          maximum: 128
+        description:
+          type: string
+          description: The description of the file space.
+          maximum: 1024
+        enforceSafeNames:
+          type: boolean
+          description: Option to manage file and folder naming restrictions of a file space. By default, naming restrictions will be enabled. Setting this as **`false`** during file space creation will turn OFF the naming restriction for the file space.
+    FileSpaceUpdateRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          description: The description of the file space.
+          maximum: 1024
+    FileSpaceDetails:
+      type: object
+      required:
+        - id
+        - rootId
+        - clock
+        - createdOn
+        - createdBy
+        - modifiedOn
+        - modifiedBy
+        - enforceSafeNames
+      properties:
+        id:
+          type: string
+          description: The globally unique identifier of the file space.
+        rootId:
+          type: string
+          description: Root folder identifier.
+        description:
+          type: string
+          description: The description of the file space.
+        deleted:
+          type: boolean
+          description: Indicates whether the space is in the deleted state. If space is deleted, the content of the space is not accessible.
+        createdOn:
+          type: string
+          format: date-time
+          readOnly: true
+        createdBy:
+          type: string
+          readOnly: true
+        modifiedOn:
+          type: string
+          format: date-time
+          readOnly: true
+        modifiedBy:
+          type: string
+          readOnly: true
+        changeToken:
+          type: string
+          description: The change token that represents a state of the space and all it's content (resources in the space) at specific moment of time when this resource has been returned.  Can be used for fetching the changes after this moment of time in incremental synchronisation scenarios by passing this token to `ListChanges` API. The change in the value of this token means something has been changed in the space.
+        enforceSafeNames:
+          type: boolean
+          description: Option to manage file and folder naming restrictions of a file space. By default, naming restrictions will be enabled. Setting this as **`false`** during file space creation will turn OFF the naming restriction for the file space.
+    CreateFolderRequest:
+      title: "CreateFolderRequest"
+      required:
+        - "parentFolderId"
+        - "name"
+      type: "object"
+      properties:
+        id:
+          type: string
+          description: The identifier for a new folder can be given in the request. The id has to be unique in the file space and cannot be updated after creation. If id is not specified service will generate unique id.
+          maxLength: 128
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 255
+        parentFolderId:
+          type: "string"
+          minLength: 1
+          maxLength: 128
+    UpdateFolderRequest:
+      title: "UpdateFolderRequest"
+      type: "object"
+      properties:
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 255
+          description: "The new name."
+        parentFolderId:
+          type: "string"
+          minLength: 1
+          maxLength: 128
+          description: "The new parent folder identifier"
+    FolderDetailsResponse:
+      type: object
+      required:
+        - id
+        - version
+        - type
+        - spaceId
+        - createdBy
+        - modifiedBy
+        - createdOn
+        - modifiedOn
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+          pattern: '^([1-9]\d*)\.0$'
+        parentFolderId:
+          type: string
+          description: Folder identifier of the parent folder. Not present for root folder or for files not attached to any folder (attachments).
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - FOLDER
+        spaceId:
+          type: string
+        size:
+          type: integer
+          format: int64
+        createdBy:
+          type: string
+        modifiedBy:
+          type: string
+        createdOn:
+          type: string
+          format: date-time
+        modifiedOn:
+          type: string
+          format: date-time
+        deleted:
+          type: boolean
+        topActiveParentFolderId:
+          type : string
+          description: Id of the topmost parent folder which is not in deleted state. Normally this will be equal to space `rootFolderId` for not deleted resources and equal to `null` (missing in the response) for deleted resources. If this property is not `null` and not equal to space `rootFolderId` then this resource belongs to orphan subtree with not deleted resources that is not connected to the space root folder.
+    FileFolderResponse:
+      type: object
+      required:
+        - id
+        - version
+        - type
+        - spaceId
+        - createdBy
+        - modifiedBy
+        - createdOn
+        - modifiedOn
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+          pattern: '^([1-9]\d*)\.([1-9]\d*)$'
+        parentFolderId:
+          type: string
+          description: Folder identifier of the parent folder. Not present for root folder or for files not attached to any folder (attachments).
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - FILE
+            - FOLDER
+        spaceId:
+          type: string
+        size:
+          type: integer
+          format: int64
+        createdBy:
+          type: string
+        modifiedBy:
+          type: string
+        createdOn:
+          type: string
+          format: date-time
+        modifiedOn:
+          type: string
+          format: date-time
+        deleted:
+          type: boolean
+        downloadUrl:
+          type: string
+          format: url
+          description: "Pre-signed URL for downloading the file content. \
+                \ Part downloads supported with range headers. Use GET on this url \
+                \ to download file content (no other parameters/headers required). \
+                \ The headers: content-type, content-disposition and cache-control will be part \
+                \ of the response while making the GET call on the pre-signed download url."
+        topActiveParentFolderId:
+          type : string
+          description: Id of the topmost parent folder which is not in deleted state. Normally this will be equal to space `rootFolderId` for not deleted resources and equal to `null` (missing in the response) for deleted resources. If this property is not `null` and not equal to space `rootFolderId` then this resource belongs to orphan subtree with not deleted resources that is not connected to the space root folder.
+    FolderChildrenResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileFolderResponse'
+        next:
+          type: string
+          description: "Responses that include only a partial set of the items identified\
+            \ by the request will contain a link that allows retrieving the next partial\
+            \ set of items. <br/>This link is called a next link. Clients should treat\
+            \ the URL of the next link as opaque, and should not append system query\
+            \ options to the URL of a next link. <br/>The url returned by server might\
+            \ be an absolute or relative url with query parameters. <br/>If it is a relative url,\
+            \ client is responsible for adding a hostname to form a full url. <br/>Otherwise\
+            \ no transformations must be applied by client to the url and it should\
+            \ be sent as is to the server to fetch a next page of events."
+    FolderVersionDetailsResponse:
+      type: object
+      required:
+        - id
+        - version
+        - type
+        - spaceId
+        - createdBy
+        - modifiedBy
+        - createdOn
+        - modifiedOn
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+          pattern: '^([1-9]\d*)\.0$'
+        parentFolderId:
+          type: string
+          description: Folder identifier of the parent folder. Not present for root folder or for files not attached to any folder (attachments).
+        name:
+          type: string
+        type:
+          type: string
+        spaceId:
+          type: string
+        size:
+          type: integer
+          format: int64
+        createdBy:
+          type: string
+        modifiedBy:
+          type: string
+        createdOn:
+          type: string
+          format: date-time
+        modifiedOn:
+          type: string
+          format: date-time
+        deleted:
+          type: boolean
+    ListFolderVersionDetailsResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FolderVersionDetailsResponse'
+        next:
+          type: string
+          description: "Responses that include only a partial set of the items identified\
+            \ by the request will contain a link that allows retrieving the next partial\
+            \ set of items. <br/>This link is called a next link. Clients should treat\
+            \ the URL of the next link as opaque, and should not append system query\
+            \ options to the URL of a next link. <br/>The url returned by server might\
+            \ be an absolute or relative url with query parameters. <br/>If it is a relative url,\
+            \ client is responsible for adding a hostname to form a full url. <br/>Otherwise\
+            \ no transformations must be applied by client to the url and it should\
+            \ be sent as is to the server to fetch a next page of events."
+    FileUploadRequest:
+      type: object
+      required:
+        - parentFolderId
+      properties:
+        id:
+          type: string
+          description: The identifier for a new/existing file can be given in the request. The id has to be unique in the file space and cannot be updated after creation.
+            If id is not specified service will generate unique id in case of a new file.
+            Either Id of name is mandatory
+        name:
+          type: string
+          description: Name of the file. Either Id of name is mandatory. Name is mandatory for new file upload.
+            While upload to existing file, name can be provided in addition to id to perform rename along with the upload operation
+        parentFolderId:
+          type: string
+          description: Parent folder identifier to which the file has to be uploaded
+        contents:
+          type: array
+          description: Content that has format not specified refers to source file.
+            Object for source file in contents is not required for singlepart uploads.
+            Maximum of 5 contents excluding source file
+          maxItems: 6
+          items:
+            $ref: '#/components/schemas/FileUploadContentRequest'
+    FileUploadContentRequest:
+      type: object
+      properties:
+        format:
+          type: string
+          description: "For source file this property can be ignored.\
+            Though there is not restriction on the format string, certain values have special meaning like `THUMBNAIL`.\
+            the content stored with format value as `THUMBNAIL` will be treated as the source file's thumb image and\
+            thumbnail url in file details response will refer to this content"
+    FileUploadResponse:
+      type: object
+      required:
+        - uploadId
+        - status
+        - createdOn
+        - createdBy
+        - modifiedOn
+        - input
+      properties:
+        uploadId:
+          type: string
+          description: Upload identifier
+        status:
+          type: string
+          description: Overall status of the upload
+          enum:
+            - UPLOADABLE
+            - ERROR
+            - DONE
+        input:
+          $ref: '#/components/schemas/FileUploadInputDetails'
+        result:
+          $ref: '#/components/schemas/FileUploadResultDetails'
+        createdOn:
+          type: string
+          description: Upload created time
+          format: date-time
+        createdBy:
+          type: string
+          description: User who initiated the upload
+        modifiedOn:
+          type: string
+          description: Updated whenever the upload is modified.
+          format: date-time
+    FileUploadDetailsResponse:
+      type: object
+      required:
+        - uploadId
+        - status
+        - input
+        - createdOn
+        - createdBy
+        - modifiedOn
+      properties:
+        uploadId:
+          type: string
+          description: Upload identifier
+        status:
+          type: string
+          description: Overall status of the upload
+          enum:
+            - UPLOADABLE
+            - ERROR
+            - DONE
+        input:
+          $ref: '#/components/schemas/FileUploadInputDetails'
+        result:
+          $ref: '#/components/schemas/FileUploadResultDetails'
+        createdOn:
+          type: string
+          description: Upload created time
+          format: date-time
+        modifiedOn:
+          type: string
+          description: Updated whenever the upload is modified.
+          format: date-time
+        createdBy:
+          type: string
+          description: User who initiated the upload
+        errorReason:
+          type: string
+          description: Error reason in case status is ERROR
+          example: THUMB_MAX_SIZE_EXCEEDED
+    FileUploadInputDetails:
+      type: object
+      required:
+        - spaceId
+        - parentFolderId
+      properties:
+        spaceId:
+          type: string
+          description: file space id of the file
+        fileId:
+          type: string
+          description: "File identifier. Generated automatically if not provided"
+        name:
+          type: string
+          description: Name of the file
+        parentFolderId:
+          type: string
+          description: Parent folder id of the file
+        contents:
+          type: array
+          description: content that has format not specified refers to source file
+          items:
+            $ref: '#/components/schemas/UploadContentDetails'
+    UploadContentDetails:
+      type: object
+      required:
+        - uploadMode
+        - status
+        - updatedOn
+      properties:
+        format:
+          type: string
+          description: "For source file this property will not exist"
+        uploadMode:
+          type: string
+          description: "Upload mode, it maybe SINGLEPART or MULTIPART"
+          enum:
+            - SINGLEPART
+        url:
+          type: string
+          description: File should be uploaded to this url with the PUT operation
+            and no additional headers including Authorization to be sent. Returned
+            only when status is UPLOADABLE
+        status:
+          type: string
+          description: "Status of the file upload, the valid values are UPLOADABLE"
+          enum:
+            - UPLOADABLE
+            - AVAILABLE
+            - ERROR
+        updatedOn:
+          type: string
+          description: Content status last updated time.
+          format: date-time
+    FileUploadResultDetails:
+      type: object
+      properties:
+        version:
+          type: string
+          pattern: '^([1-9]\d*)\.([1-9]\d*)$'
+          description: File version identifier assigned on upload completion. Property is returned only when status is DONE.
+    UpdateFileDetailsRequest:
+      title: "UpdateFileDetailsRequest"
+      type: "object"
+      properties:
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 255
+          description: "The new name."
+        parentFolderId:
+          type: "string"
+          description: "The new parent folder identifier."
+    FileDetailsResponse:
+      type: object
+      required:
+        - id
+        - version
+        - type
+        - spaceId
+        - createdBy
+        - modifiedBy
+        - createdOn
+        - modifiedOn
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+          pattern: '^([1-9]\d*)\.([1-9]\d*)$'
+        parentFolderId:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - FILE
+        spaceId:
+          type: string
+        size:
+          type: integer
+          format: int64
+        createdBy:
+          type: string
+        modifiedBy:
+          type: string
+        createdOn:
+          type: string
+          format: date-time
+        modifiedOn:
+          type: string
+          format: date-time
+        deleted:
+          type: boolean
+          description: Deleted state flag
+        downloadUrl:
+          type: string
+          format: url
+          description: "Pre-signed URL for downloading the file content. \
+                \ Part downloads supported with range headers. Use GET on this url \
+                \ to download file content (no other parameters/headers required). \
+                \ The headers: content-type, content-disposition and cache-control will be part \
+                \ of the response while making the GET call on the pre-signed download url."
+        topActiveParentFolderId:
+          type: string
+          description: Id of the topmost parent folder which is not in deleted state. Normally this will be equal to space `rootFolderId` for not deleted resources and equal to `null` (missing in the response) for deleted resources. If this property is not `null` and not equal to space `rootFolderId` then this resource belongs to orphan subtree with not deleted resources that is not connected to the space root folder.
+    FileVersionDetailsResponse:
+      type: object
+      required:
+        - id
+        - version
+        - type
+        - spaceId
+        - createdBy
+        - modifiedBy
+        - createdOn
+        - modifiedOn
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+          pattern: '^([1-9]\d*)\.([1-9]\d*)$'
+        parentFolderId:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - FILE
+        spaceId:
+          type: string
+        size:
+          type: integer
+          format: int64
+        createdBy:
+          type: string
+        modifiedBy:
+          type: string
+        createdOn:
+          type: string
+          format: date-time
+        modifiedOn:
+          type: string
+          format: date-time
+        deleted:
+          type: boolean
+          description: Deleted state flag
+        downloadUrl:
+          type: string
+          format: url
+          description: "Pre-signed URL for downloading the file content. \
+                \ Part downloads supported with range headers. Use GET on this url \
+                \ to download file content (no other parameters/headers required). \
+                \ The headers: content-type, content-disposition and cache-control will be part \
+                \ of the response while making the GET call on the pre-signed download url."
+    ListFileVersionDetailsResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileVersionDetailsResponse'
+        next:
+          type: string
+          description: "Responses that include only a partial set of the items identified\
+            \ by the request will contain a link that allows retrieving the next partial\
+            \ set of items. <br/>This link is called a next link. Clients should treat\
+            \ the URL of the next link as opaque, and should not append system query\
+            \ options to the URL of a next link. <br/>The url returned by server might\
+            \ be an absolute or relative url with query parameters. <br/>If it is a relative url,\
+            \ client is responsible for adding a hostname to form a full url. <br/>Otherwise\
+            \ no transformations must be applied by client to the url and it should\
+            \ be sent as is to the server to fetch a next page of events."
+  securitySchemes:
+    Bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

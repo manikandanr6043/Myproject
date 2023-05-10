@@ -1,0 +1,162 @@
+name: "Static Analysis"
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+
+# Cancel in-progress runs of the same workflow for the same branch, we are interested in checking only the latest commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  staticcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: 'src/api/go.mod'
+          check-latest: true
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+      - name: Run staticcheck
+        shell: bash
+        run: |
+          for module in ./src/api ./src/versions-worker ./src/commit-processor ./src/common-go/api_error ./src/common-go/constants ./src/common-go/requestcontext ./src/common-go/repository ./src/common-go/configuration
+          do
+            cwd=$(pwd)
+            cd $module
+            staticcheck ./...
+            cd $cwd
+          done
+
+  dependency-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: 'src/api/go.mod'
+          check-latest: true
+
+      - name: Run dependency checks
+        shell: bash
+        run: |
+          STATUS=0
+          assert-nothing-changed() {
+            local diff
+            "$@" >/dev/null || return 1
+            if ! diff="$(git diff -U1 --color --exit-code)"; then
+              printf '\e[31mError: running `\e[1m%s\e[22m` results in modifications that you must check into version control:\e[0m\n%s\n\n' "$*" "$diff" >&2
+              git checkout -- .
+              STATUS=1
+            fi
+          }
+
+          for module in ./src/api ./src/versions-worker ./src/commit-processor ./src/common-go/api_error ./src/common-go/constants ./src/common-go/requestcontext ./src/common-go/repository ./src/common-go/configuration
+          do
+            cwd=$(pwd)
+            cd $module
+            assert-nothing-changed go fmt ./...
+            assert-nothing-changed go mod tidy
+            cd $cwd
+          done
+
+          assert-nothing-changed go work sync
+
+          exit $STATUS
+
+  golangci-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: 'src/api/go.mod'
+          check-latest: true
+
+      - name: api
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          args: --timeout 3m --verbose
+          working-directory: ./src/api
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+      - name: versions-worker
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          working-directory: ./src/versions-worker
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+      - name: commit-processor
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          working-directory: ./src/commit-processor
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+      - name: api_error
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          working-directory: ./src/common-go/api_error
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+      - name: constants
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          working-directory: ./src/common-go/constants
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+      - name: requestcontext
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          working-directory: ./src/common-go/requestcontext
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+      - name: repository
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          working-directory: ./src/common-go/repository
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+      - name: configuration
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          working-directory: ./src/common-go/configuration
+          skip-pkg-cache: true
+          skip-build-cache: true
+  # super-linter:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: actions/setup-go@v4
+  #       with:
+  #         go-version-file: 'src/api/go.mod'
+  #     - name: Lint Code Base
+  #      uses: github/super-linter@v4
+  #      env:
+  #        VALIDATE_ALL_CODEBASE: false
+  #        DEFAULT_BRANCH: main
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

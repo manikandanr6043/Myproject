@@ -1,0 +1,23 @@
+# Add 'repo' label to any root file changes or directly under the src (e.g. analysis rules are there)
+repo:
+- any: ['*', '!go.work*']
+
+dependencies:
+- any: ['src/**/go.mod']
+
+api:
+- any: ['docs/*.yaml']
+
+workflows:
+- any: ['.github/workflows/*']
+
+# Add 'source' label to any change to src files within the source dir EXCEPT for the files directly in sub-folder
+source:
+- any: ['src/**/*', '!src/**/*_test.go']
+
+# Add 'tests' label to any change to tests files
+tests:
+- any: ['tests/**/*', 'src/**/*_test.go', '!tests/k6/**/*']
+
+perf_tests:
+- any: ['tests/k6/**/*']

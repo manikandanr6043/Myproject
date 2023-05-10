@@ -1,0 +1,22 @@
+{
+  "scriptFile": "thumbnail_observer.py",
+  "bindings": [
+    {
+      "name": "event",
+      "type": "eventGridTrigger",
+      "direction": "in"
+    },
+    {
+      "type": "kafka",
+      "direction": "out",
+      "name": "message",
+      "brokerList": "%BootstrapServer%",
+      "topic": "%ThumbTopic%",
+      "username": "%ConfluentCloudUserName%",
+      "password": "%ConfluentCloudPassword%",
+      "enableIdempotence": true,
+      "protocol": "SASLSSL",
+      "authenticationMode": "PLAIN"
+    }
+  ]
+}

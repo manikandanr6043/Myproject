@@ -1,0 +1,10 @@
+{
+  "scriptFile": "file_activator.py",
+  "bindings": [
+    {
+      "name": "event",
+      "type": "eventGridTrigger",
+      "direction": "in"
+    }
+  ]
+}

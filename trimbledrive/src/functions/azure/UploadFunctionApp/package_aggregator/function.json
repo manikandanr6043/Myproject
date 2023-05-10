@@ -1,0 +1,28 @@
+{
+  "scriptFile": "package_aggregator.py",
+  "bindings": [
+    {
+      "type": "cosmosDBTrigger",
+      "name": "documents",
+      "direction": "in",
+      "leaseCollectionName": "leases",
+      "connectionStringSetting": "CosmosConnectionString",
+      "databaseName": "%CosmosDbName%",
+      "collectionName": "file_upload",
+      "createLeaseCollectionIfNotExists": true
+    },
+    {
+      "type": "kafka",
+      "direction": "out",
+      "name": "message",
+      "brokerList": "%BootstrapServer%",
+      "topic": "%CommitTopic%",
+      "username": "%ConfluentCloudUserName%",
+      "password": "%ConfluentCloudPassword%",
+      "enableIdempotence": true,
+      "protocol": "SASLSSL",
+      "authenticationMode": "PLAIN"
+    }
+  ]
+}
+

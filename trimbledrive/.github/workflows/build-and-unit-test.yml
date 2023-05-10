@@ -1,0 +1,59 @@
+name: "Build and unit-test"
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+
+# Cancel in-progress runs of the same workflow for the same branch, we are interested in checking only the latest commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-unit-test:
+    runs-on: ubuntu-latest-4-cores
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'src/api/go.mod'
+          check-latest: true
+
+      - name: Get dependencies
+        run: |
+          go mod download
+
+      - name: Build binaries
+        shell: bash
+        run: ./scripts/build.sh
+
+      - name: Test
+        shell: bash
+        run: ./scripts/run-unit-tests.sh
+
+  install-and-unit-test-python:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r src/functions/azure/UploadFunctionApp/requirements.txt
+
+      - name: Run Python Tests
+        run: |
+          cd  src/functions/azure/UploadFunctionApp
+          python -m unittest

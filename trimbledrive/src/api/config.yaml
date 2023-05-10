@@ -1,0 +1,33 @@
+---
+server:
+  port: 8080
+mongo:
+  uri: "mongodb+srv://<username>:<password>@trimbledrivedevelopment.dfq1n.mongodb.net/?retryWrites=true&w=majority"
+  dbname: "tdrive"
+storageAccount:
+  name: ""
+  key: ""
+  url: "https://<account>.blob.core.windows.net/"
+  containerName: "tdrive"
+cosmos:
+  accountEndpoint: "https://<account>.documents.azure.com:443/"
+  dbName: "tdrive"
+tid:
+  jwks: "https://id.trimble.com/.well-known/jwks.json"
+logger:
+  sampling:
+    initial: 100
+    thereafter: 100
+compress:
+  excludeContentTypes:
+    - image/webp
+    - image/png
+    - image/jpeg
+    - video/webm
+    - font/woff2
+    - video/ogg
+    - video/mpeg
+    - video/mp4
+    - application/zip
+    - application/gzip
+  minResponseBodyBytes: 1024

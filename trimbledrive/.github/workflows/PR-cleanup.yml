@@ -1,0 +1,188 @@
+name: "Cleanup TMP resources after PR"
+
+on:
+  pull_request:
+    types: [ closed ]
+
+jobs:
+
+  cleanup-TMP:
+    permissions:
+      id-token: write
+      contents: read
+    runs-on: ubuntu-latest
+    environment: "development"
+    if: ${{ always() }}
+    env:
+      FRONT_DOOR_PROFILE_NAME: cdn-rtmz-tdrv-tcdp
+      FRONT_DOOR_STACK_NAME: tdrive-api-tmp${{github.event.number}}
+      WAF_POLICY_NAME: wafrtmztdriveapitmp${{github.event.number}}
+      API_CONTAINER_NAME: tdrive-api-tmp${{github.event.number}}
+      VWORKER_CONTAINER_NAME: tdrive-vworker-tmp${{github.event.number}}
+      COMMIT_CONTAINER_NAME: tdrive-commit-tmp${{github.event.number}}
+      STORAGE_CONTAINER_NAME: tdrive-tmp${{github.event.number}}
+      FUNCTION_APP_NAME: tdrive-upload-function-app-tmp${{github.event.number}}
+      COSMOS_DATABASE_NAME: tdrive-tmp${{github.event.number}}
+      THUMB_EVENT_GRID_SUBSCRIPTION_NAME: thumb-blob-trigger-tmp${{github.event.number}}
+      ACTIVATOR_EVENT_GRID_SUBSCRIPTION_NAME: activator-blob-trigger-tmp${{github.event.number}}
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Delete FrontDoor and WAF
+        shell: bash
+        continue-on-error: true
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          az afd security-policy delete -g ${{ vars.AZURE_RG_NAME }} --profile-name ${{ env.FRONT_DOOR_PROFILE_NAME }} --security-policy-name ${{ env.FRONT_DOOR_STACK_NAME }} -y
+          az afd endpoint delete -g ${{ vars.AZURE_RG_NAME }} --profile-name ${{ env.FRONT_DOOR_PROFILE_NAME }} --endpoint-name ${{ env.FRONT_DOOR_STACK_NAME }} -y
+          az afd origin-group delete -g ${{ vars.AZURE_RG_NAME }} --profile-name ${{ env.FRONT_DOOR_PROFILE_NAME }} --origin-group-name ${{ env.FRONT_DOOR_STACK_NAME }} -y
+          az network front-door waf-policy delete -g ${{ vars.AZURE_RG_NAME }} -n ${{ env.WAF_POLICY_NAME }}
+      - name: Delete container
+        shell: bash
+        continue-on-error: true
+        run: |
+          az extension add --name containerapp --upgrade
+          az containerapp delete -n ${{ env.API_CONTAINER_NAME }} -g ${{ vars.AZURE_RG_NAME }} --yes
+          az containerapp delete -n ${{ env.VWORKER_CONTAINER_NAME }} -g ${{ vars.AZURE_RG_NAME }} --yes
+          az containerapp delete -n ${{ env.COMMIT_CONTAINER_NAME }} -g ${{ vars.AZURE_RG_NAME }} --yes
+      - name: Delete resources
+        shell: bash
+        continue-on-error: true
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          az storage container delete --account-name ${{ vars.STORAGE_ACCOUNT_NAME }} --name ${{ env.STORAGE_CONTAINER_NAME }} --auth-mode login
+          az eventgrid event-subscription delete --name ${{ env.THUMB_EVENT_GRID_SUBSCRIPTION_NAME }} --source-resource-id ${{ vars.STORAGE_ACCOUNT_RESOURCE_ID }}
+          az eventgrid event-subscription delete --name ${{ env.ACTIVATOR_EVENT_GRID_SUBSCRIPTION_NAME  }} --source-resource-id ${{ vars.STORAGE_ACCOUNT_RESOURCE_ID }}
+          az functionapp delete --name ${{ env.FUNCTION_APP_NAME }} --resource-group ${{ vars.AZURE_RG_NAME }} --keep-empty-plan
+          az cosmosdb sql database delete --account-name ${{ vars.COSMOS_ACCOUNT_NAME }} -g ${{ vars.AZURE_RG_NAME }} --name ${{ env.COSMOS_DATABASE_NAME }} --yes
+      - name: logout
+        continue-on-error: true
+        run: az logout
+
+  delete-registry:
+    permissions:
+      id-token: write
+      contents: read
+    environment: development
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: tdrive-api-tmp${{github.event.number}}
+      VWORKER_IMAGE_NAME: tdrive-vworker-tmp${{github.event.number}}
+      COMMIT_PROCESSOR_IMAGE_NAME: tdrive-commit-tmp${{github.event.number}}
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 'Delete Repository with PR images'
+        shell: bash
+        continue-on-error: true
+        run: |
+          az acr repository delete -n ${{ vars.REGISTRY_NAME }} --repository ${{ env.IMAGE_NAME }} --yes || true
+          az acr repository delete -n ${{ vars.REGISTRY_NAME }} --repository ${{ env.VWORKER_IMAGE_NAME }} --yes || true
+          az acr repository delete -n ${{ vars.REGISTRY_NAME }} --repository ${{ env.COMMIT_PROCESSOR_IMAGE_NAME }} --yes || true
+
+      - name: logout
+        run: az logout
+
+  delete-databases-mongo:
+    permissions:
+      id-token: write
+      contents: read
+    environment: development
+    runs-on: ubuntu-latest
+    env:
+      DBNAME_PREFIX: tdrive-tmp${{github.event.number}}
+      MONGO_DB_URI: ${{ secrets.MONGO_URI_ADMIN }}
+    steps:
+
+      - uses: actions/checkout@v3
+
+      - name: 🍃 Install mongosh
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg
+          wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
+          echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+          sudo apt-get update
+          sudo apt-get install -y mongodb-mongosh
+
+      - name: 'Delete mongo databases'
+        shell: bash
+        run: |
+          mongosh --eval 'var dbNamePrefix="${{ env.DBNAME_PREFIX }}"' "${{ env.MONGO_DB_URI }}" ./scripts/db-cleanup.js
+
+  delete-databases-cosmos:
+    permissions:
+      id-token: write
+      contents: read
+    environment: development
+    runs-on: ubuntu-latest
+    env:
+      DBNAME_PREFIX: tdrive-tmp${{github.event.number}}
+    steps:
+
+      - uses: actions/checkout@v3
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: 'Delete cosmos databases'
+        shell: bash
+        continue-on-error: true
+        run: |
+          bash ./scripts/cosmos-db-cleanup.sh -c ${{ vars.COSMOS_ACCOUNT_NAME }} -g ${{ vars.AZURE_RG_NAME }} -d ${{ env.DBNAME_PREFIX }}
+
+      - name: logout
+        run: az logout
+
+  delete-kafka-topics:
+    permissions:
+      id-token: write
+      contents: read
+    environment: development
+    runs-on: ubuntu-latest
+    needs:
+      # Mongo database and kafka topics clean up jobs are NOT in parallel
+      # because when topic deletion goes in parallel with database drop,
+      # kafka connector recreates topics at times.
+      # Hence, to perform a proper cleanup of kafka topics, this job need to be run after database drop.
+      - delete-databases-mongo
+    env:
+      THUMB_PROCESSOR_TOPIC: trimble.tdrive.thumb_processor-tmp${{github.event.number}}
+      COMMIT_PROCESSOR_TOPIC: trimble.tdrive.commit_processor-tmp${{github.event.number}}
+      TOPIC_PREFIX: db.tdrive-tmp${{github.event.number}}-
+    steps:
+
+      - name: Delete topics
+        shell: bash
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          curl \
+            -X DELETE \
+            -H "Authorization: Basic ${{ secrets.CONFLUENT_KAFKA_BASIC_AUTH }}" \
+            ${{ vars.CONFLUENT_KAFKA_URL }}/kafka/v3/clusters/${{ vars.CONFLUENT_KAFKA_CLUSTER_ID }}/topics/${{ env.THUMB_PROCESSOR_TOPIC }}
+          curl \
+            -X DELETE \
+            -H "Authorization: Basic ${{ secrets.CONFLUENT_KAFKA_BASIC_AUTH }}" \
+            ${{ vars.CONFLUENT_KAFKA_URL }}/kafka/v3/clusters/${{ vars.CONFLUENT_KAFKA_CLUSTER_ID }}/topics/${{ env.COMMIT_PROCESSOR_TOPIC }}
+
+          for topic in $(curl --request GET --url ${{ vars.CONFLUENT_KAFKA_URL }}/kafka/v3/clusters/${{ vars.CONFLUENT_KAFKA_CLUSTER_ID }}/topics --header 'Authorization: Basic ${{ secrets.CONFLUENT_KAFKA_BASIC_AUTH }}' | jq -r '.data[].topic_name' | grep ${{ env.TOPIC_PREFIX }})
+          do
+            echo "Deleting $topic"
+            curl --request DELETE \
+              --url ${{ vars.CONFLUENT_KAFKA_URL }}/kafka/v3/clusters/${{ vars.CONFLUENT_KAFKA_CLUSTER_ID }}/topics/$topic \
+              --header 'Authorization: Basic ${{ secrets.CONFLUENT_KAFKA_BASIC_AUTH }}'
+          done

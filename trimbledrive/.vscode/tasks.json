@@ -1,0 +1,84 @@
+{
+  "version": "2.0.0",
+  "cwd": "${workspaceFolder}",
+  "tasks": [
+    {
+      "label": "build",
+      "command": "./scripts/build.sh",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "test",
+      "command": "./scripts/run-unit-tests.sh",
+      "group": "test",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "APP_ENV": "dev"
+        }
+      }
+    },
+    {
+      "label": "deploy-code-to-dev-stack",
+      "command": "scripts/deploy-stack.sh",
+      "type": "shell",
+      "args": [
+        "${input:stackNameSuffix}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "delete-dev-stack",
+      "command": "scripts/delete-stack.sh",
+      "type": "shell",
+      "args": [
+        "${input:stackNameSuffix}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "type": "func",
+      "label": "func: host start",
+      "command": "host start",
+      "problemMatcher": "$func-python-watch",
+      "isBackground": true,
+      "dependsOn": "pip install (functions)",
+      "options": {
+        "cwd": "${workspaceFolder}/src\\functions\\azure\\UploadFunctionApp"
+      }
+    },
+    {
+      "label": "pip install (functions)",
+      "type": "shell",
+      "osx": {
+        "command": "${config:azureFunctions.pythonVenv}/bin/python -m pip install -r requirements.txt"
+      },
+      "windows": {
+        "command": "${config:azureFunctions.pythonVenv}\\Scripts\\python -m pip install -r requirements.txt"
+      },
+      "linux": {
+        "command": "${config:azureFunctions.pythonVenv}/bin/python -m pip install -r requirements.txt"
+      },
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}/src\\functions\\azure\\UploadFunctionApp"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "stackNameSuffix",
+      "description": "Stack name suffix:",
+      "default": "${env:USER}${env:USERNAME}",
+      "type": "promptString"
+    }
+  ]
+}

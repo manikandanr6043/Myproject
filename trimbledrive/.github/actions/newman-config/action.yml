@@ -1,0 +1,85 @@
+name: "Newman environment configuration"
+description: "Prepare postman environment"
+
+inputs:
+  tid_env:
+    description: "A TID environment: prod|stage"
+    default: "prod"
+    required: false
+  service_url:
+    description: "A service url under the test"
+    required: true
+  postman_env_template:
+    description: "A postman environment template file"
+    required: true
+  aws-role-to-assume:
+    description: "AWS Role ARN to assume to Invoke Lambda"
+    required: true
+  user1_name:
+    description: "A test user1 name"
+    required: true
+  user1_pw:
+    description: "A test user1 password"
+    required: true
+  user2_name:
+    description: "A test user2 name"
+    required: true
+  user2_pw:
+    description: "A test user2 password"
+    required: true
+  app_key:
+    description: "A app key"
+    required: true
+  app_name:
+    description: "A app name"
+    required: true
+  app_callback:
+    description: "A app callback url"
+    required: true
+
+outputs:
+  artifact-name:
+    description: "The name of the artifact with the postman environment file"
+    value: ${{ steps.set-names.outputs.artifact-name }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1-node16
+      with:
+        role-to-assume: ${{inputs.aws-role-to-assume}}
+        role-session-name: GitHubDeployment
+        aws-region: eu-west-1
+
+    - id: test-user1
+      uses: ./.github/actions/acquire-tid-token
+      with:
+        user_name: ${{ inputs.user1_name  }}
+        user_pwd: ${{ inputs.user1_pw }}
+        app_key: ${{ inputs.app_key }}
+        app_name: ${{ inputs.app_name }}
+        app_callback: ${{ inputs.app_callback }}
+        tid_env: ${{ inputs.tid_env }}
+
+    - id: test-user2
+      uses: ./.github/actions/acquire-tid-token
+      with:
+        user_name: ${{ inputs.user2_name }}
+        user_pwd: ${{ inputs.user2_pw }}
+        app_key: ${{ inputs.app_key }}
+        app_name: ${{ inputs.app_name }}
+        app_callback: ${{ inputs.app_callback }}
+        tid_env: ${{ inputs.tid_env }}
+
+    - name: Extract host name
+      id: set-names
+      shell: bash
+      run: |
+        export hostname=$(echo ${{ inputs.service_url }} |  sed -e 's/^https:\/\///')
+        echo "artifact-name=$hostname.postman_environment.json" >> $GITHUB_OUTPUT
+
+    - name: Prepare postman environment
+      shell: bash
+      run: |
+        jq --arg surl "${{ inputs.service_url }}" --arg user1Token "${{steps.test-user1.outputs.token}}" --arg user2Token "${{steps.test-user2.outputs.token}}" '(.values[] | select(.key == "ServiceUrl") | .value) |= $surl | (.values[] | select(.key == "_tid_access_token") | .value) |= $user1Token | (.values[] | select(.key == "_tid_access_token2") | .value) |= $user2Token'  ${{ inputs.postman_env_template }} > ${{steps.set-names.outputs.artifact-name}}

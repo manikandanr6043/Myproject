@@ -1,0 +1,55 @@
+name: 'Newman (Postman CLI)'
+description: 'Run postman tests, generate postman test report'
+
+inputs:
+  environment:
+    description: 'A postman environment file name'
+    required: true
+  collection:
+    description: 'A postman collection file name'
+    required: true
+  name:
+    description: 'A name of the run to be used as an artifact and check name'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+
+    - name: Install Node
+      uses: actions/setup-node@v3
+      with:
+        node-version: "16.x"
+
+    - name: Install newman
+      shell: bash
+      run: |
+        npm install --location=global newman
+
+    - name: Make Directory for results
+      shell: bash
+      run: mkdir -p TestResults
+
+    - name: Run postman tests
+      id: run
+      shell: bash
+      run: |
+        newman run ${{ inputs.collection }} -e ${{inputs.environment}} -r cli,json,junit --reporter-json-export ./TestResults/ --reporter-junit-export ./TestResults/
+
+    - name: Upload postman tests results
+      if: always()
+      continue-on-error: true
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ inputs.name }}
+        path: "TestResults/*"
+        retention-days: 1
+
+    - uses: dorny/test-reporter@v1.6.0
+      if: always()
+      continue-on-error: true
+      with:
+        name: Tests Results (${{ inputs.name }})
+        path: "TestResults/*.xml"
+        reporter: java-junit
+        fail-on-error: "false"

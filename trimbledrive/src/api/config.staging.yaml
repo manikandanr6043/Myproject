@@ -1,0 +1,14 @@
+---
+mongo:
+  uri: "mongodb+srv://<username>:<password>@trimbledrivedevelopment.dfq1n.mongodb.net/?retryWrites=true&w=majority"
+  dbname: "tdrive"
+tid:
+  jwks: "https://stage.id.trimblecloud.com/.well-known/jwks.json"
+storageAccount:
+  name: ""
+  key: ""
+  url: "https://<account>.blob.core.windows.net/"
+  containerName: "tdrive"
+cosmos:
+  accountEndpoint: "https://<account>.documents.azure.com:443/"
+  dbName: "tdrive"

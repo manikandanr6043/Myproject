@@ -1,0 +1,17 @@
+---
+mongo:
+  uri: "mongodb+srv://<username>:<password>@trimbledrivedevelopment.dfq1n.mongodb.net/?retryWrites=true&w=majority"
+  dbname: "tdrive"
+storageAccount:
+  name: "srgrtmztdrvdevcontent"
+  key: ""
+  url: "https://cdn-rtmz-tdrv-tcdp-agdyg5btcjg3c0b7.z01.azurefd.net/"
+  containerName: "tdrive"
+cosmos:
+  url: "https://cdbrtmztdrvdevcosmos.documents.azure.com:443/"
+  dbName: "tdrive"
+logger:
+  level: debug
+  sampling:
+    initial: 0
+    thereafter: 0

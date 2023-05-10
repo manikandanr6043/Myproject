@@ -1,0 +1,12 @@
+go 1.20
+
+use (
+	./src/api
+	./src/commit-processor
+	./src/common-go/api_error
+	./src/common-go/configuration
+	./src/common-go/constants
+	./src/common-go/repository
+	./src/common-go/requestcontext
+	./src/versions-worker
+)

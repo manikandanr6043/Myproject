@@ -1,0 +1,79 @@
+version: 2
+updates:
+- package-ecosystem: github-actions
+  directory: "/"
+  labels:
+    - dependencies
+    - actions
+  schedule:
+    interval: weekly
+- package-ecosystem: gomod
+  directory: "/src/api"
+  labels:
+    - dependencies
+    - go
+  schedule:
+    interval: weekly
+  allow:
+    - dependency-type: "all"
+  open-pull-requests-limit: 10
+- package-ecosystem: gomod
+  directory: "/src/versions-worker"
+  labels:
+    - dependencies
+    - go
+  schedule:
+    interval: weekly
+  allow:
+    - dependency-type: "all"
+  open-pull-requests-limit: 10
+- package-ecosystem: gomod
+  directory: "/src/commit-processor"
+  labels:
+    - dependencies
+    - go
+  schedule:
+    interval: weekly
+  allow:
+    - dependency-type: "all"
+  open-pull-requests-limit: 10
+- package-ecosystem: gomod
+  directory: "/src/common-go/api_error"
+  labels:
+    - dependencies
+    - go
+  schedule:
+    interval: weekly
+  allow:
+    - dependency-type: "all"
+  open-pull-requests-limit: 10
+- package-ecosystem: gomod
+  directory: "/src/common-go/repository"
+  labels:
+    - dependencies
+    - go
+  schedule:
+    interval: weekly
+  allow:
+    - dependency-type: "all"
+  open-pull-requests-limit: 10
+- package-ecosystem: gomod
+  directory: "/src/common-go/requestcontext"
+  labels:
+    - dependencies
+    - go
+  schedule:
+    interval: weekly
+  allow:
+    - dependency-type: "all"
+  open-pull-requests-limit: 10
+- package-ecosystem: gomod
+  directory: "/src/common-go/constants"
+  labels:
+    - dependencies
+    - go
+  schedule:
+    interval: weekly
+  allow:
+    - dependency-type: "all"
+  open-pull-requests-limit: 10

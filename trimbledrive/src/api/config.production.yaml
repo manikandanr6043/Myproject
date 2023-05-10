@@ -1,0 +1,12 @@
+---
+mongo:
+  uri: "mongodb+srv://<username>:<password>@trimbledrivedevelopment.dfq1n.mongodb.net/?retryWrites=true&w=majority"
+  dbname: "tdrive"
+storageAccount:
+  name: ""
+  key: ""
+  url: "https://<account>.blob.core.windows.net/"
+  containerName: "tdrive"
+cosmos:
+  accountEndpoint: "https://<account>.documents.azure.com:443/"
+  dbName: "tdrive"

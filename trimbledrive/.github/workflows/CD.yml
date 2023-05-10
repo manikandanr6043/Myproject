@@ -1,0 +1,516 @@
+# This workflow is run to deploy a new version to INT stack after new code is pushed to `main` branch.
+# If this workflow completed successfully then version is tagged as potentially releasable.
+name: "Integrate in INT stack"
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - "CHANGELOG.md"
+
+# Every repo push need to be sequentially processed as we deploy to common INT environment version by version
+concurrency: int_environment
+
+env:
+  VERSION: "1.0.${{ github.run_number }}"
+  IMAGE_NAME_TAG: tdrive-api-int:1.0.${{ github.run_number }}.${{ github.run_attempt }}
+  VWORKER_IMAGE_NAME_TAG: tdrive-vworker-int:1.0.${{ github.run_number }}.${{ github.run_attempt }}
+  COMMIT_PROCESSOR_IMAGE_NAME_TAG: tdrive-commit-int:1.0.${{ github.run_number }}.${{ github.run_attempt }}
+  APP_VERSION: v1.0.${{ github.run_number }}.${{ github.run_attempt }}
+  STACK_SUFFIX: int
+  STORAGE_CONTAINER_NAME: tdrive-int
+  COSMOS_DATABASE_NAME: tdrive-int
+  FUNCTION_APP_NAME: tdrive-upload-function-app-int
+  AZURE_FUNCTION_APP_PACKAGE_PATH: 'src/functions/azure/UploadFunctionApp'
+  THUMB_EVENT_GRID_SUBSCRIPTION_NAME: thumb-blob-trigger-int
+  ACTIVATOR_EVENT_GRID_SUBSCRIPTION_NAME: activator-blob-trigger-int
+  EVENT_TYPE_FILTER: Microsoft.Storage.BlobCreated
+  PYTHON_VERSION: '3.8'
+
+jobs:
+
+  init-mongodb:
+    environment: development
+    runs-on: ubuntu-latest
+    env:
+      MONGO_DBNAME: tdrive-int
+    outputs:
+      MONGO_DBNAME: ${{ env.MONGO_DBNAME }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: 🍃 Install mongosh
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg
+          wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | sudo apt-key add -
+          echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+          sudo apt-get update
+          sudo apt-get install -y mongodb-mongosh
+
+      - name: Setup Database
+        shell: bash
+        run: |
+          MONGO_DB_URI=$(echo "${{ secrets.MONGO_URI }}" | sed "s/\//\/${{ env.MONGO_DBNAME }}/3")
+          mongosh $MONGO_DB_URI ./scripts/db-setup.js
+
+  init-kafka-topics:
+    environment: development
+    runs-on: ubuntu-latest
+    env:
+      THUMB_PROCESSOR_TOPIC: trimble.tdrive.thumb_processor-int
+      COMMIT_PROCESSOR_TOPIC: trimble.tdrive.commit_processor-int
+      DB_KAFKA_TOPIC: db.tdrive-int.latest
+      DB_KAFKA_DLT: db.tdrive-int.latest.dlt
+    outputs:
+      THUMB_PROCESSOR_TOPIC: ${{ env.THUMB_PROCESSOR_TOPIC }}
+      COMMIT_PROCESSOR_TOPIC: ${{ env.COMMIT_PROCESSOR_TOPIC }}
+      DB_KAFKA_TOPIC: ${{ env.DB_KAFKA_TOPIC }}
+      DB_KAFKA_DLT: ${{ env.DB_KAFKA_DLT }}
+    steps:
+      - name: Create Kafka topics
+        shell: bash
+        run: |
+          echo "Creating topic: ${{ env.THUMB_PROCESSOR_TOPIC }}"
+          curl \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Basic ${{ secrets.CONFLUENT_KAFKA_BASIC_AUTH }}" \
+            ${{ vars.CONFLUENT_KAFKA_URL }}/kafka/v3/clusters/${{ vars.CONFLUENT_KAFKA_CLUSTER_ID }}/topics \
+            -d '{"topic_name":"${{ env.THUMB_PROCESSOR_TOPIC }}","partitions_count":1}'
+          echo "Creating topic: ${{ env.COMMIT_PROCESSOR_TOPIC }}"
+          curl \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Basic ${{ secrets.CONFLUENT_KAFKA_BASIC_AUTH }}" \
+            ${{ vars.CONFLUENT_KAFKA_URL }}/kafka/v3/clusters/${{ vars.CONFLUENT_KAFKA_CLUSTER_ID }}/topics \
+            -d '{"topic_name":"${{ env.COMMIT_PROCESSOR_TOPIC }}","partitions_count":1}'
+
+          echo "Creating topic: ${{ env.DB_KAFKA_TOPIC }}"
+          curl \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Basic ${{ secrets.CONFLUENT_KAFKA_BASIC_AUTH }}" \
+            ${{ vars.CONFLUENT_KAFKA_URL }}/kafka/v3/clusters/${{ vars.CONFLUENT_KAFKA_CLUSTER_ID }}/topics \
+            -d '{"topic_name":"${{ env.DB_KAFKA_TOPIC }}","partitions_count":1}'
+
+          echo "Creating topic: ${{ env.DB_KAFKA_DLT }}"
+          curl \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Basic ${{ secrets.CONFLUENT_KAFKA_BASIC_AUTH }}" \
+            ${{ vars.CONFLUENT_KAFKA_URL }}/kafka/v3/clusters/${{ vars.CONFLUENT_KAFKA_CLUSTER_ID }}/topics \
+            -d '{"topic_name":"${{ env.DB_KAFKA_DLT }}","partitions_count":1}'
+
+  init-infra:
+    permissions:
+      id-token: write
+      contents: read
+    environment: development
+    runs-on: ubuntu-latest
+    needs:
+      - init-mongodb
+      - init-kafka-topics
+      - build-image
+      - build-versions-worker-image
+      - build-commit-processor-image
+    outputs:
+      FUNCTION_APP_NAME: ${{ env.FUNCTION_APP_NAME }}
+      STORAGE_CONTAINER_NAME: ${{ env.STORAGE_CONTAINER_NAME }}
+      api_fqdn: ${{ steps.deploy.outputs.fqdn }}
+      API_CONTAINER_NAME: ${{ steps.deploy.outputs.apiContainerName }}
+      VWORKER_CONTAINER_NAME: ${{ steps.deploy.outputs.vworkerContainerName }}
+      COMMIT_CONTAINER_NAME: ${{ steps.deploy.outputs.commitContainerName }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: deploy IaC
+        id: deploy
+        uses: azure/arm-deploy@v1
+        with:
+          scope: resourcegroup
+          subscriptionId: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          resourceGroupName: ${{ vars.AZURE_RG_NAME }}
+          template: ./iac/bicep/main.bicep
+          parameters: 'stackSuffix="${{ env.STACK_SUFFIX }}" apiServiceImageTag="${{ needs.build-image.outputs.IMAGE_NAME_TAG }}" versionWorkerImageTag="${{ needs.build-versions-worker-image.outputs.VWORKER_IMAGE_NAME_TAG }}" commitProcessorImageTag="${{ needs.build-commit-processor-image.outputs.COMMIT_PROCESSOR_IMAGE_NAME_TAG }}"'
+          failOnStdErr: false
+          deploymentName: ${{ env.STACK_SUFFIX }}-${{github.run_number}}-${{github.run_attempt}}
+
+      - name: logout
+        run: az logout
+
+  deploy-function:
+    permissions:
+      contents: read
+      id-token: write
+    environment: development
+    runs-on: ubuntu-latest
+    needs:
+      - init-infra
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 'Setup Azure Core Tools'
+        shell: bash
+        run: |
+          wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
+          sudo dpkg -i packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo apt-get install azure-functions-core-tools-4
+
+      - name: 'Publish Function App'
+        shell: bash
+        run: |
+          pushd './${{ env.AZURE_FUNCTION_APP_PACKAGE_PATH }}'
+          func azure functionapp publish ${{ env.FUNCTION_APP_NAME }} --build remote --python --timeout 360
+          popd
+
+  subscribe-function:
+    permissions:
+      id-token: write
+    environment: development
+    runs-on: ubuntu-latest
+    env:
+      ACTIVATOR_FUNCTION_ENDPOINT: /subscriptions/${{vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ vars.AZURE_RG_NAME }}/providers/Microsoft.Web/sites/${{ needs.init-infra.outputs.FUNCTION_APP_NAME }}/functions/file_activator
+      THUMB_FUNCTION_ENDPOINT: /subscriptions/${{vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ vars.AZURE_RG_NAME }}/providers/Microsoft.Web/sites/${{ needs.init-infra.outputs.FUNCTION_APP_NAME }}/functions/thumbnail_observer
+      ACTIVATOR_EVENT_SUBJECT_PREFIX: /blobServices/default/containers/${{ needs.init-infra.outputs.STORAGE_CONTAINER_NAME }}/blobs/orig
+      THUMB_EVENT_SUBJECT_PREFIX: /blobServices/default/containers/${{ needs.init-infra.outputs.STORAGE_CONTAINER_NAME }}/blobs/thumb
+    needs:
+      - init-infra
+      - deploy-function
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 'Create Event Grid Subscription for ThumbnailObserver'
+        shell: bash
+        run: |
+          az eventgrid event-subscription create \
+            --name ${{ env.THUMB_EVENT_GRID_SUBSCRIPTION_NAME }} \
+            --source-resource-id ${{ vars.STORAGE_ACCOUNT_RESOURCE_ID }} \
+            --advanced-filter eventtype StringIn ${{ env.EVENT_TYPE_FILTER }} \
+            --subject-begins-with ${{ env.THUMB_EVENT_SUBJECT_PREFIX }} \
+            --endpoint ${{ env.THUMB_FUNCTION_ENDPOINT }} \
+            --endpoint-type azurefunction
+
+      - name: 'Create Event Grid Subscription for FileActivator'
+        shell: bash
+        run: |
+          az eventgrid event-subscription create \
+            --name ${{ env.ACTIVATOR_EVENT_GRID_SUBSCRIPTION_NAME }} \
+            --source-resource-id ${{ vars.STORAGE_ACCOUNT_RESOURCE_ID }} \
+            --advanced-filter eventtype StringIn ${{ env.EVENT_TYPE_FILTER }} \
+            --subject-begins-with ${{ env.ACTIVATOR_EVENT_SUBJECT_PREFIX }} \
+            --endpoint ${{ env.ACTIVATOR_FUNCTION_ENDPOINT }} \
+            --endpoint-type azurefunction
+
+  build-image:
+    permissions:
+      id-token: write
+      contents: read
+    environment: development
+    runs-on: ubuntu-latest-4-cores
+    outputs:
+      IMAGE_NAME_TAG: ${{ env.IMAGE_NAME_TAG }}
+      APP_VERSION: ${{ env.APP_VERSION }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 'Build and Push Image'
+        shell: bash
+        run: |
+          az acr login --name ${{ vars.REGISTRY_NAME }}
+          docker build --target release -f src/api/Dockerfile -t ${{ vars.REGISTRY_LOGIN_SERVER }}/${{ env.IMAGE_NAME_TAG }} --build-arg APP_VERSION=${{ env.APP_VERSION }} .
+          docker push ${{ vars.REGISTRY_LOGIN_SERVER }}/${{ env.IMAGE_NAME_TAG }}
+
+      - name: logout
+        run: az logout
+
+  build-versions-worker-image:
+    permissions:
+      id-token: write
+      contents: read
+    environment: development
+    runs-on: ubuntu-latest-4-cores
+    outputs:
+      APP_VERSION: ${{ env.APP_VERSION }}
+      VWORKER_IMAGE_NAME_TAG: ${{ env.VWORKER_IMAGE_NAME_TAG }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 'Build and Push Image'
+        shell: bash
+        run: |
+          az acr login --name ${{ vars.REGISTRY_NAME }}
+          docker build -f src/versions-worker/Dockerfile -t ${{ vars.REGISTRY_LOGIN_SERVER }}/${{ env.VWORKER_IMAGE_NAME_TAG }} --build-arg APP_VERSION=${{ env.APP_VERSION }} .
+          docker push ${{ vars.REGISTRY_LOGIN_SERVER }}/${{ env.VWORKER_IMAGE_NAME_TAG }}
+      - name: logout
+        if: ${{ always() }}
+        run: az logout
+
+  build-commit-processor-image:
+    permissions:
+      id-token: write
+      contents: read
+    environment: development
+    runs-on: ubuntu-latest-4-cores
+    outputs:
+      APP_VERSION: ${{ env.APP_VERSION }}
+      COMMIT_PROCESSOR_IMAGE_NAME_TAG: ${{ env.COMMIT_PROCESSOR_IMAGE_NAME_TAG }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 'Build and Push Image'
+        shell: bash
+        run: |
+          az acr login --name ${{ vars.REGISTRY_NAME }}
+          docker build -f src/commit-processor/Dockerfile -t ${{ vars.REGISTRY_LOGIN_SERVER }}/${{ env.COMMIT_PROCESSOR_IMAGE_NAME_TAG }} --build-arg APP_VERSION=${{ env.APP_VERSION }} .
+          docker push ${{ vars.REGISTRY_LOGIN_SERVER }}/${{ env.COMMIT_PROCESSOR_IMAGE_NAME_TAG }}
+      - name: logout
+        if: ${{ always() }}
+        run: az logout
+
+  postman-test:
+    name: "Func Tests"
+    needs:
+      - init-infra
+      - subscribe-function
+    permissions:
+      id-token: write
+      contents: read
+      checks: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - id: newman-config
+        uses: ./.github/actions/newman-config
+        with:
+          user1_name: "tdrive-user1@trimbleautomation.com"
+          user1_pw: ${{ secrets.TEST_AUTOMATION_USER1_PW_PROD }}
+          user2_name: "tdrive-user2@trimbleautomation.com"
+          user2_pw: ${{ secrets.TEST_AUTOMATION_USER2_PW_PROD }}
+          app_key: ${{ vars.TEST_AUTOMATION_APP_CONSUMER_KEY_PROD }}
+          app_name: ${{ vars.TEST_AUTOMATION_APP_NAME }}
+          app_callback: ${{ vars.TEST_AUTOMATION_APP_CALLBACK }}
+          tid_env: "prod"
+          service_url: "${{ needs.init-infra.outputs.api_fqdn }}"
+          postman_env_template: "tests/postman/CI.postman_environment.json"
+          aws-role-to-assume: ${{secrets.INVOKE_TID4_LAMBDA_ROLE_ARN}}
+      - name: Upload postman env artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: postman-test.INT.postman_environment.json
+          path: ${{steps.newman-config.outputs.artifact-name}}
+          retention-days: 1
+
+      - uses: ./.github/actions/newman-run
+        with:
+          collection: "tests/postman/TrimbleDrive.postman_collection.json"
+          environment: ${{steps.newman-config.outputs.artifact-name}}
+          name: "INT Full"
+
+  postman-test-long:
+    name: "Func Tests Long Running"
+    needs:
+      - init-infra
+      - subscribe-function
+    permissions:
+      id-token: write
+      contents: read
+      checks: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - id: newman-config
+        uses: ./.github/actions/newman-config
+        with:
+          user1_name: "tdrive-user1@trimbleautomation.com"
+          user1_pw: ${{ secrets.TEST_AUTOMATION_USER1_PW_PROD }}
+          user2_name: "tdrive-user2@trimbleautomation.com"
+          user2_pw: ${{ secrets.TEST_AUTOMATION_USER2_PW_PROD }}
+          app_key: ${{ vars.TEST_AUTOMATION_APP_CONSUMER_KEY_PROD }}
+          app_name: ${{ vars.TEST_AUTOMATION_APP_NAME }}
+          app_callback: ${{ vars.TEST_AUTOMATION_APP_CALLBACK }}
+          tid_env: "prod"
+          service_url: "${{ needs.init-infra.outputs.api_fqdn }}"
+          postman_env_template: "tests/postman/CI.postman_environment.json"
+          aws-role-to-assume: ${{secrets.INVOKE_TID4_LAMBDA_ROLE_ARN}}
+      - name: Upload postman env artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: postman-long.INT.postman_environment.json
+          path: ${{steps.newman-config.outputs.artifact-name}}
+          retention-days: 1
+
+      - uses: ./.github/actions/newman-run
+        with:
+          collection: "tests/postman/TrimbleDrive-LongRunning.postman_collection.json"
+          environment: ${{steps.newman-config.outputs.artifact-name}}
+          name: "Func Tests Long Running"
+
+  perf-test-smoke:
+    name: "Perf Tests Smoke"
+    permissions:
+      id-token: write
+      contents: read
+      checks: write
+    needs:
+      - init-infra
+      - subscribe-function
+    runs-on: ubuntu-latest
+    env:
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: true
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          role-to-assume: ${{secrets.INVOKE_TID4_LAMBDA_ROLE_ARN}}
+          role-session-name: GitHubDeployment
+          aws-region: eu-west-1
+      - id: test-user
+        uses: ./.github/actions/acquire-tid-token
+        with:
+          user_name: "tdrive-user1@trimbleautomation.com"
+          user_pwd: ${{ secrets.TEST_AUTOMATION_USER1_PW_PROD }}
+          app_key: ${{ vars.TEST_AUTOMATION_APP_CONSUMER_KEY_PROD }}
+          app_name: ${{ vars.TEST_AUTOMATION_APP_NAME }}
+          app_callback: ${{ vars.TEST_AUTOMATION_APP_CALLBACK }}
+          tid_env: "prod"
+
+      - name: Run Datadog agent
+        uses: datadog/agent-github-action@v1.3
+        with:
+          container_name: datadog
+          image_name: datadog/agent
+          datadog_site: datadoghq.com
+          api_key: ${{ secrets.DD_API_KEY }}
+          extra_env: DD_DOGSTATSD_NON_LOCAL_TRAFFIC=1
+
+      # cannot use the grafana/k6-action because it cannot connect to DD agent by some reason
+      - name: Install k6
+        run: |
+          curl https://github.com/loadimpact/k6/releases/download/v0.40.0/k6-v0.40.0-linux-amd64.tar.gz -L | tar xvz --strip-components 1
+      - name: Run local k6 test
+        run: |
+          export K6_STATSD_ENABLE_TAGS=true
+          ./k6 run --duration 180s --out json=k6-results.json --out statsd --tag STACK_NAME=TDrive-TMP --env TC_TOKEN=${{ steps.test-user.outputs.token }} --env BASE_URL=${{ needs.init-infra.outputs.api_fqdn }} ./tests/k6/smoke.js >> k6-summary.txt || true
+          cat k6-summary.txt
+          grep -v "running (" k6-summary.txt | grep -v "bad_requests " | grep -v "default " >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload perf tests results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: k6-results
+          path: k6-results.json
+          retention-days: 1
+
+  tag-release:
+    runs-on: ubuntu-latest
+    needs:
+      - postman-test
+      - postman-test-long
+      - perf-test-smoke
+    steps:
+      - uses: actions/checkout@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOT_PAT }}
+      - name: Configure git
+        shell: bash
+        run: |
+          git config --local user.email "trimble-drive-dev-ug+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+      # - name: Update changelog
+      #   uses: Trimble-Connect/tc-actions/update-changelog@main
+      #   with:
+      #     version: ${{ env.VERSION }}
+      # - name: Update and push changelog
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.BOT_PAT }}
+      #   shell: bash
+      #   run: |
+      #     sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [${{ env.VERSION }}] - $(date +%F)/" "CHANGELOG.md"
+      #     git add CHANGELOG.md
+      #     git commit -m "Update changelog for version ${{ env.VERSION }}"
+      #     git push
+      - name: Tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOT_PAT }}
+        shell: bash
+        run: |
+          git tag v${{ env.VERSION }}
+          git push origin v${{ env.VERSION }}
+
+  publish-swagger:
+    runs-on: ubuntu-latest
+    needs:
+    - init-infra
+    - subscribe-function
+    environment:
+      name: "SwaggerHub"
+      url: https://app.swaggerhub.com/apis/Trimble-Connect/tdrive-int/1.0
+    env:
+      SWAGGER_FILE: docs/apispec.yaml
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Patch server urls
+        run: |
+          HOST_NAME=$(echo "${{ needs.init-infra.outputs.api_fqdn }}" | sed -E "s/^\s*.*:\/\///g")
+          sed -i "s/security:/servers:\n  - url: https:\/\/$HOST_NAME\/v1\n    description: Integration stack endpoint\nsecurity:/" $SWAGGER_FILE
+      - name: Publish
+        shell: bash
+        run: |
+          curl -X POST -H Authorization:${{ secrets.SWAGGER_API_KEY }} -H 'Content-Type: application/yaml' --data-binary @$SWAGGER_FILE https://api.swaggerhub.com/apis/Trimble-Connect/tdrive-int?oas=3.0.1
+          if [[ $? -ne 0 ]]; then
+            echo "API Spec Publishing Failed with code $?"
+            exit 1
+          fi

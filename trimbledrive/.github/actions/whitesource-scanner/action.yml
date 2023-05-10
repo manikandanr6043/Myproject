@@ -1,0 +1,138 @@
+name: Whitesource Scan
+description: Runs the Whitesource scan
+inputs:
+  api-key:
+    description: Use the WHITESOURCE_API_KEY secret.
+    required: true
+  product-name:
+    description: |
+          The product name to report results to.
+          Typically you want to setup two products in WSS per project: the "Sandbox - <product>" and "<product>".
+          Main branch builds targets the "<product>", and the feature branch targets the "Sandbox - <product>".
+          Sandbox projects are not reported to the Security Portal (TSP), and simultaneous scans overriding each other is not an issue.
+    required: true
+  project-name:
+    description: The Sonar project name.
+    required: true
+  project-version:
+    description: The Sonar project version.
+    required: false
+  checkout:
+    description: Use checkout action to get the sources. Use 'false' if checkout is already done. Default value is false.
+    required: false
+    default: 'false'
+  google-chat-webhook:
+    description: Add the optional Google Chat webhook as a repository secret, leave empty if chat notifications are not used.
+    required: false
+  scan-folder:
+    description: |
+      Use to pass in a different location for scanning.
+      By default, scanning and config file resolution happens from the repo root.
+    required: false
+  config-file:
+    description: |
+      Use to pass in the config file name.
+      By default, the config file resolution looks for three files: wss-unified-agent.config, whitesource-fs-agent.config or wss.config,
+      starting from the repo root, or the provided scanning folder.
+    required: false
+  nuget-version:
+    description: Pass the nuget version to be used, to use the default nuget setup.
+    required: false
+  dotnet-solution:
+    description: Pass the dotnet solution path. Use with nuget default setup.
+    required: false
+  dotnet-version:
+    description: Pass the dotnet version to be used, to use the default dotnet setup.
+    required: false
+  store-artifacts:
+    description: Set to true to store scanning artifacts, otherwise use false.
+    default: 'false'
+    required: false
+runs:
+  using: composite
+  steps:
+    - name: Checkout files
+      if: ${{ inputs.checkout == 'true' }}
+      uses: actions/checkout@v3
+
+      # NUGET DEFAULT SETUP
+    - name: Setup nuget
+      if: ${{ inputs.nuget-version }}
+      uses: NuGet/setup-nuget@v1.0.6
+      with:
+        nuget-version: ${{inputs.nuget-version}}
+
+    - name: Resolve nuget dependencies
+      if: ${{ inputs.nuget-version }}
+      run: nuget restore ${{inputs.dotnet-solution}}
+      shell: bash
+      # NUGET DEFAULT SETUP END
+
+      # DOTNET DEFAULT SETUP
+    - name: Setup dotnet
+      if: ${{ inputs.dotnet-version }}
+      uses: actions/setup-dotnet@v2
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: Resolve dotnet dependencies
+      if: ${{ inputs.dotnet-version }}
+      run: dotnet restore
+      shell: bash
+      # DOTNET DEFAULT SETUP END
+
+    - name: Run scanner
+      env:
+        WS_APIKEY: ${{inputs.api-key}}
+        WS_WSS_URL: https://saas.whitesourcesoftware.com/agent
+        WS_PRODUCTNAME: ${{inputs.product-name}}
+        WS_PROJECTNAME: ${{inputs.project-name}}
+        WS_PROJECTVERSION: ${{inputs.project-version}}
+        SCAN_FOLDER: ${{inputs.scan-folder}}
+        CONFIG_FILE: ${{inputs.config-file}}
+        GOFLAGS: "-mod=readonly"
+      run: ${GITHUB_ACTION_PATH}/wss.sh
+      shell: bash
+
+    - name: Chat notification for errors
+      if: ${{inputs.google-chat-webhook && env.ws_scan_error}}
+      run: |
+        message="*Whitesource scan error!*"
+        message+=$'\n\n'
+        message+="${{env.ws_scan_error}}"
+        message+=$'\n\n'
+        message+="*End of message*"
+
+        payload=$(jq -n --arg msg "$message" '{ text: $msg }')
+        curl -X POST -H "Content-Type: text/plain" --data "$payload" "${{inputs.google-chat-webhook}}"
+      shell: bash
+
+    - name: Pull request comment for errors
+      if: github.event.pull_request && env.ws_scan_error
+      uses: actions/github-script@v6
+      env:
+        MESSAGE: ${{env.ws_scan_error}}
+      with:
+        script: |
+          const {MESSAGE} = process.env
+          github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.payload.number,
+            body: `${MESSAGE}`
+          })
+
+    - name: Whitesource Scan error
+      if: ${{env.ws_scan_error}}
+      env:
+        MESSAGE: ${{env.ws_scan_error}}
+      run: echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+      shell: bash
+
+    - name: Archive scan artifacts
+      uses: actions/upload-artifact@v3
+      if: ${{ inputs.store-artifacts == 'true' }}
+      with:
+        name: scan-artifacts
+        path: '**/whitesource'
+        retention-days: 1

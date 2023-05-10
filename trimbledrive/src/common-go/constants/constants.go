@@ -1,0 +1,40 @@
+package constants
+
+const RequestIdAzureHeaderKey string = "X-Azure-Ref"
+const RequestIdAWSHeaderKey string = "x-amzn-RequestId"
+const RequestIdTrimbleHeaderKey string = "X-Trimble-RefId"
+const RequestID string = "requestId"
+const UserID string = "userId"
+const AppID string = "appId"
+const RequestCtx string = "reqCtx"
+const TimeFormat = "2006-01-02T15:04:05.000Z0700"
+const Folder string = "FOLDER"
+const File string = "FILE"
+const ETag string = "ETag"
+const Location string = "Location"
+const ContentLocation string = "Content-Location"
+const ContentEncoding string = "Content-Encoding"
+const ContentLength string = "Content-Length"
+const FormatSrc string = "SRC"
+const FormatThumbnail = "THUMBNAIL"
+const ContentUploadModeSinglepart = "SINGLEPART"
+const ContentUploadStatusUploadable = "UPLOADABLE"
+const FileUploadStatusUploadable = "UPLOADABLE"
+const FileUploadStatusError = "ERROR"
+const FileUploadStatusDone = "DONE"
+const DefaultExpiryInMinutes = 5
+const StoragePathSeparator = "/"
+const DefaultStorageDir = "orig"
+const ThumbStorageDir = "thumb"
+const ConsumerNameHeader = "consumerName"
+const RetryCountHeader = "retryCount"
+const VersionWorkerConsumerName = "versions-worker"
+const DownloadUrl = "downloadUrl"
+const MaxPageSize = 10000
+const VersionSeparator = "."
+
+// Regular Expressions
+
+const UrlSafe string = "^[a-zA-Z0-9_-]*$"
+const ReservedName string = "(^((?i)PRN|AUX|NUL|CON|COM[1-9]|LPT[1-9]|(\\.*)(?-i))(\\..*)?$)|(([\\x00-\\x1f\\\\?*:\"\\x{200B}|/<>])+)|([. ]$)"
+const IllegalChars string = "[\\\\/:*?\"|<>]+"

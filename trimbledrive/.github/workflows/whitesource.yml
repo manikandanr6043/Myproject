@@ -1,0 +1,79 @@
+name: Whitesource Scan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.mod'
+      - '**.sum'
+      - '**.work'
+      - '**/requirements.txt'
+  push:
+    branches: [main]
+    paths-ignore:
+      - "CHANGELOG.md"
+  schedule:
+    #        ┌───────────── minute (0 - 59)
+    #        │  ┌───────────── hour (0 - 23)
+    #        │  │ ┌───────────── day of the month (1 - 31)
+    #        │  │ │ ┌───────────── month (1 - 12 or JAN-DEC)
+    #        │  │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
+    #        │  │ │ │ │
+    #        │  │ │ │ │
+    #        │  │ │ │ │
+    #        *  * * * *
+    - cron: "0 6 * * 6"
+  workflow_dispatch:
+
+# Cancel in-progress runs of the same workflow for the same branch, we are interested in checking only the latest commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mend:
+    runs-on: ubuntu-latest
+    environment:
+      name: "WhiteSource"
+      url: https://saas.whitesourcesoftware.com/Wss/WSS.html#!project;id=8879180
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'src/api/go.mod'
+          check-latest: true
+
+      - name: Get dependencies
+        run: |
+          go mod download
+
+      - name: Remove go.work
+        run: |
+          echo Remove Go workspace file to as WhiteSource does not understand it
+          rm go.work
+          rm go.work.sum
+
+      - name: Whitesource Scan
+        uses: ./.github/actions/whitesource-scanner
+        if: github.event.pull_request
+        with:
+          api-key: ${{secrets.WHITESOURCE_API_KEY}}
+          product-name: "Sandbox - Connected Data Environment"
+          project-name: TrimbleDrive
+          project-version: ${{ github.run_number }}
+          store-artifacts: true
+          config-file: ./wss-unified-agent.config
+
+      - name: Whitesource Scan
+        uses: ./.github/actions/whitesource-scanner
+        if:  github.event_name != 'pull_request'
+        with:
+          api-key: ${{secrets.WHITESOURCE_API_KEY}}
+          product-name: "Connected Data Environment"
+          project-name: TrimbleDrive
+          project-version: ${{ github.run_number }}
+          store-artifacts: true
+          config-file: ./wss-unified-agent.config

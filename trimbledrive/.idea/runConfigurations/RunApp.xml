@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="RunApp" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="trimble-drive" />
+    <working_directory value="$PROJECT_DIR$/src/api" />
+    <envs>
+      <env name="GO_ENVIRONMENT" value="development" />
+    </envs>
+    <kind value="FILE" />
+    <package value="/cmapp" />
+    <directory value="$PROJECT_DIR$" />
+    <filePath value="$PROJECT_DIR$/src/api/main.go" />
+    <method v="2" />
+  </configuration>
+</component>

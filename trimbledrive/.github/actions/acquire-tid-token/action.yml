@@ -1,0 +1,39 @@
+name: "Acquire TID token"
+description: "Acquire a TID token for a test user by invoking a Lambda"
+
+inputs:
+  tid_env:
+    description: "A TID environment: prod|stage"
+    required: false
+    default: "prod"
+  app_key:
+    description: "A app key"
+    required: true
+  app_name:
+    description: "A app name"
+    required: true
+  app_callback:
+    description: "A app callback url"
+    required: true
+  user_name:
+    description: "A user name"
+    required: true
+  user_pwd:
+    description: "A user password"
+    required: true
+
+outputs:
+  token:
+    description: "A user token"
+    value: ${{ steps.acquire.outputs.token }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Acquire token for a test user
+      id: acquire
+      shell: bash
+      run: |
+        aws lambda invoke --cli-binary-format raw-in-base64-out --function-name arn:aws:lambda:eu-west-1:999084435822:function:fetch-tid4-token --region eu-west-1 --payload '{"username": "'"${{ inputs.user_name }}"'", "password": "'"${{ inputs.user_pwd }}"'", "tidEnv": "'"${{ inputs.tid_env }}"'", "consumerKey": "'"${{ inputs.app_key }}"'", "appNames": ["'"${{ inputs.app_name }}"'"], "redirectUrl": "http://localhost"}' token
+        export userToken=$(jq -r fromjson.accessToken token)
+        echo "token=$(echo $userToken)" >> $GITHUB_OUTPUT

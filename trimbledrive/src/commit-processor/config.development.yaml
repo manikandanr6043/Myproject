@@ -1,0 +1,21 @@
+---
+maxRetry: 3
+mongo:
+  uri: "mongodb+srv://<username>:<password>@trimbledrivedevelopment.dfq1n.mongodb.net/?retryWrites=true&w=majority"
+  dbname: "tdrive"
+cosmos:
+  url: "https://cdbrtmztdrvdevcosmos.documents.azure.com:443/"
+  dbName: "tdrive"
+kafka:
+  brokers:
+  apiKey:
+  apiSecret:
+  groupId:
+  batchSize: 1
+  topic:
+  deadLetterTopic:
+logger:
+  level: debug
+  sampling:
+    initial: 0
+    thereafter: 0
