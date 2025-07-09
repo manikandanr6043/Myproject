@@ -1,7 +1,7 @@
 steps:
   - name: 'alpine'
     entrypoint: 'echo'
-    args: ['Hello, World!']
+    args: ['Hello, mani']
 
 options:
   logging: CLOUD_LOGGING_ONLY
